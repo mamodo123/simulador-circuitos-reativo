@@ -1,0 +1,5 @@
+# Dependências Python necessárias apenas para compilar o TCC (pasta latex/).
+# O pacote LaTeX "minted", usado nas listagens de código, depende do Pygments
+# para o realce de sintaxe. Também é preciso uma distribuição LaTeX
+# (MiKTeX ou TeX Live); veja a seção "Compilar o TCC" do README.
+Pygments>=2.11

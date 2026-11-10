@@ -1,10 +1,13 @@
-# Circuitos
+# Simulador de Circuitos Digitais com Propagação Reativa
+
+Biblioteca desenvolvida como Trabalho de Conclusão de Curso em Ciência da Computação (UFSC). O texto do TCC está na pasta [`latex/`](latex/), com a versão compilada em [`latex/main.pdf`](latex/main.pdf).
 
 Simulador de circuitos digitais em Python puro (sem dependências externas), construído em torno de um **modelo reativo/orientado a eventos**: cada componente (fio, porta lógica, somador, registrador) expõe uma saída (`output`) e uma lista de *listeners*. Quando a saída de um componente muda, ele notifica automaticamente todos os componentes ligados a ele, propagando o sinal pelo circuito, de forma parecida com o que aconteceria em hardware real.
 
 ## Sumário
 
 - [Requisitos](#requisitos)
+- [Instalação com ambiente virtual (venv)](#instalação-com-ambiente-virtual-venv)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Conceito: o modelo reativo por eventos](#conceito-o-modelo-reativo-por-eventos)
 - [Referência da API](#referência-da-api)
@@ -25,17 +28,102 @@ Simulador de circuitos digitais em Python puro (sem dependências externas), con
 - [Como criar seu próprio circuito](#como-criar-seu-próprio-circuito)
 - [Limitações conhecidas](#limitações-conhecidas)
 - [Possíveis extensões](#possíveis-extensões)
+- [Compilar o TCC](#compilar-o-tcc)
 
 ## Requisitos
 
-- Python 3.8+ (usa apenas a biblioteca padrão, nenhuma dependência externa)
+- Python 3.8 ou mais recente. O simulador usa apenas a biblioteca padrão, sem nenhuma dependência externa, então o `requirements.txt` não instala nada; ele existe para que o fluxo usual com `pip` funcione também aqui.
+- Para compilar o texto do TCC (opcional): uma distribuição LaTeX e os pacotes de `requirements-tcc.txt` (ver [Compilar o TCC](#compilar-o-tcc)).
+
+## Instalação com ambiente virtual (venv)
+
+O passo a passo abaixo cria um ambiente virtual isolado, roda os testes e executa os exemplos. Execute os comandos a partir da pasta raiz do projeto (a que contém este README).
+
+**1. Obtenha o código**
+
+```bash
+git clone https://github.com/mamodo123/simulador-circuitos-reativo.git
+cd simulador-circuitos-reativo
+```
+
+**2. Crie o ambiente virtual**
+
+```bash
+python -m venv .venv
+```
+
+No Linux e no macOS, use `python3` no lugar de `python` se o comando `python` não existir.
+
+**3. Ative o ambiente virtual**
+
+| Sistema | Comando |
+|---|---|
+| Windows (PowerShell) | `.venv\Scripts\Activate.ps1` |
+| Windows (Prompt de Comando) | `.venv\Scripts\activate.bat` |
+| Linux / macOS (bash, zsh) | `source .venv/bin/activate` |
+
+Com o ambiente ativo, o nome `(.venv)` aparece no início da linha do terminal. No PowerShell, se aparecer um erro de política de execução de *scripts*, libere-a só para a sessão atual com `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` e ative de novo.
+
+**4. Instale as dependências**
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Como o simulador não tem dependências externas, este passo não instala nada, mas pode ser mantido como hábito. Se for compilar o TCC, instale também `requirements-tcc.txt` (ver [Compilar o TCC](#compilar-o-tcc)).
+
+**5. Verifique a instalação rodando os testes**
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+A saída deve terminar com `OK`.
+
+**6. Execute os exemplos**
+
+```bash
+python main.py                  # contador binário de 3 bits
+python experiments.py           # 12 experimentos (portas, somadores, latches, flip-flops, contadores)
+python recursos_observacao.py   # recursos de observação e depuração (transitórios, sondas, etc.)
+```
+
+Os detalhes de cada programa estão em [Como rodar](#como-rodar).
+
+**7. Use o simulador no interpretador**
+
+Com o ambiente ativo e dentro da pasta do projeto, abra o interpretador com `python` e monte um circuito:
+
+```python
+>>> from signals.bit_array import BitArray
+>>> from gates.and_gate import And
+>>> a = BitArray([True])
+>>> b = BitArray([False])
+>>> porta = And(a, b)
+>>> porta.output
+[False]
+>>> b.output = [True]   # a porta recalcula sozinha
+>>> porta.output
+[True]
+```
+
+**8. Desative o ambiente ao terminar**
+
+```bash
+deactivate
+```
+
+Nas próximas vezes, basta repetir o passo 3 (ativar) antes de usar o projeto.
 
 ## Estrutura do projeto
 
 ```
-circuitos/
+simulador-circuitos-reativo/
 ├── main.py                        # Exemplo pronto: contador binário de 3 bits
-├── experiments.py                 # 8 exemplos adicionais (NOT, half/full adder, T-FF, overflow)
+├── experiments.py                 # 12 experimentos (portas, somadores, latches, flip-flops, contadores)
+├── recursos_observacao.py         # Recursos de observação e depuração (Seção 5.3 do TCC)
+├── requirements.txt               # Dependências do simulador (nenhuma: só biblioteca padrão)
+├── requirements-tcc.txt           # Dependências para compilar o TCC (Pygments)
 ├── README.md
 ├── signals/                       # representação de sinais (fios/barramentos)
 │   ├── bit_array.py                # BitArray: sinal/vetor de bits que notifica listeners
@@ -58,8 +146,15 @@ circuitos/
 │   └── d_flip_flop_register.py       # DFlipFlopRegister: N DFlipFlop em paralelo
 ├── utils/
 │   └── binary_conversion.py        # Conversões binário <-> inteiro e padding/truncamento
-└── tests/
-    └── test_circuitos.py           # testes automatizados (unittest)
+├── tests/
+│   └── test_circuitos.py           # testes automatizados (unittest)
+└── latex/                          # texto do TCC
+    ├── main.tex                    # documento principal (abnTeX2)
+    ├── capitulos/                  # um arquivo .tex por capítulo
+    ├── figuras/                    # imagens usadas no documento
+    ├── referencias.bib             # referências bibliográficas
+    ├── main.pdf                    # TCC compilado
+    └── main-diff.pdf               # versão comparativa com as alterações da revisão
 ```
 
 ## Conceito: o modelo reativo por eventos
@@ -437,3 +532,32 @@ for _ in range(8):
 - Reset assíncrono no `BehavioralRegister`.
 - Um "gerador de clock" que dispare os pulsos automaticamente (ex.: via loop/`time.sleep`), em vez de alternar `clock.output` manualmente.
 - Visualização gráfica do circuito e da propagação dos sinais.
+
+## Compilar o TCC
+
+O texto do TCC (pasta `latex/`) usa a classe **abnTeX2** e o pacote **minted** para as listagens de código. A versão compilada já está em [`latex/main.pdf`](latex/main.pdf); os passos abaixo só são necessários para gerar o PDF de novo após alterar o texto.
+
+**Pré-requisitos**
+
+- Uma distribuição LaTeX: [MiKTeX](https://miktex.org/) (Windows) ou TeX Live (Linux/macOS). No MiKTeX, ative a instalação automática de pacotes ausentes; no TeX Live, a instalação completa (`texlive-full`) já traz tudo.
+- Perl, usado pelo `makeglossaries` para gerar a lista de siglas (o Git para Windows e o TeX Live já incluem um).
+- O Pygments, instalado no ambiente virtual do projeto:
+
+```bash
+python -m pip install -r requirements-tcc.txt
+```
+
+**Compilação**
+
+Com o ambiente virtual ativo (para que o Pygments seja encontrado), entre na pasta `latex/` e execute:
+
+```bash
+cd latex
+pdflatex -shell-escape main.tex
+bibtex main
+makeglossaries main
+pdflatex -shell-escape main.tex
+pdflatex -shell-escape main.tex
+```
+
+A opção `-shell-escape` é obrigatória, porque o minted chama o Pygments durante a compilação. As três passagens do `pdflatex` resolvem as referências cruzadas, a bibliografia e a lista de siglas. Os arquivos intermediários gerados (`.aux`, `.log`, `.toc`, `.bbl`, `_minted/` etc.) estão no `.gitignore`.

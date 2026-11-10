@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 
+# Ambientes virtuais
+.venv/
+venv/
+
 # Configurações locais de ferramentas
 .claude/
 .vscode/

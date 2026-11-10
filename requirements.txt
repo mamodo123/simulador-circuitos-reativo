@@ -1,0 +1,5 @@
+# O simulador usa apenas a biblioteca padrão do Python (3.8 ou mais recente).
+# Não há pacotes a instalar; este arquivo existe para que o fluxo usual
+# "pip install -r requirements.txt" funcione também neste projeto.
+#
+# Para compilar o texto do TCC (pasta latex/), veja requirements-tcc.txt.
