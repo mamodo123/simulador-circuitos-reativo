@@ -1,0 +1,91 @@
+% Os códigos dos apêndices são lidos diretamente dos arquivos do repositório,
+% para que o texto impresso seja sempre idêntico ao código-fonte.
+
+\chapter{Código-fonte da biblioteca}
+\label{ap:biblioteca}
+
+Este apêndice reproduz o código-fonte completo da biblioteca de simulação descrita no Capítulo~\ref{cap:proposta}, organizado pelos pacotes apresentados na Seção~\ref{sec:visao-arquitetura}. Os arquivos \texttt{\_\_init\_\_.py}, que contêm apenas a descrição de cada pacote, foram omitidos. O mesmo código está disponível no repositório do projeto \cite{esteche2026}.
+
+\setminted{fontsize=\scriptsize}
+
+\section{Pacote \texttt{signals}}
+
+\subsection*{\texttt{signals/bit\_array.py}}
+\inputminted{python}{../signals/bit_array.py}
+
+\subsection*{\texttt{signals/bit\_slice.py}}
+\inputminted{python}{../signals/bit_slice.py}
+
+\subsection*{\texttt{signals/bus.py}}
+\inputminted{python}{../signals/bus.py}
+
+\section{Pacote \texttt{gates}}
+
+\subsection*{\texttt{gates/not\_gate.py}}
+\inputminted{python}{../gates/not_gate.py}
+
+\subsection*{\texttt{gates/and\_gate.py}}
+\inputminted{python}{../gates/and_gate.py}
+
+\subsection*{\texttt{gates/or\_gate.py}}
+\inputminted{python}{../gates/or_gate.py}
+
+\subsection*{\texttt{gates/xor\_gate.py}}
+\inputminted{python}{../gates/xor_gate.py}
+
+\subsection*{\texttt{gates/nor\_gate.py}}
+\inputminted{python}{../gates/nor_gate.py}
+
+\section{Pacote \texttt{components}}
+
+\subsection*{\texttt{components/full\_adder.py}}
+\inputminted{python}{../components/full_adder.py}
+
+\subsection*{\texttt{components/ripple\_carry\_adder.py}}
+\inputminted{python}{../components/ripple_carry_adder.py}
+
+\subsection*{\texttt{components/behavioral\_adder.py}}
+\inputminted{python}{../components/behavioral_adder.py}
+
+\subsection*{\texttt{components/behavioral\_register.py}}
+\inputminted{python}{../components/behavioral_register.py}
+
+\subsection*{\texttt{components/sr\_latch.py}}
+\inputminted{python}{../components/sr_latch.py}
+
+\subsection*{\texttt{components/d\_latch.py}}
+\inputminted{python}{../components/d_latch.py}
+
+\subsection*{\texttt{components/d\_flip\_flop.py}}
+\inputminted{python}{../components/d_flip_flop.py}
+
+\subsection*{\texttt{components/d\_flip\_flop\_register.py}}
+\inputminted{python}{../components/d_flip_flop_register.py}
+
+\section{Pacote \texttt{utils}}
+
+\subsection*{\texttt{utils/binary\_conversion.py}}
+\inputminted{python}{../utils/binary_conversion.py}
+
+\chapter{Testes automatizados e programas de exemplo}
+\label{ap:testes-exemplos}
+
+Este apêndice reproduz os testes automatizados descritos na Seção~\ref{sec:testes} e os programas cuja execução produziu os resultados apresentados no Capítulo~\ref{cap:resultados}: \texttt{experiments.py}, base das tabelas e quadros da Seção~\ref{sec:validacao}, e \texttt{recursos\_observacao.py}, base dos exemplos e quadros da Seção~\ref{sec:observacao}. As instruções para executá-los estão no arquivo \texttt{README} do repositório \cite{esteche2026}.
+
+\section{Testes automatizados}
+
+\subsection*{\texttt{tests/test\_circuitos.py}}
+\inputminted{python}{../tests/test_circuitos.py}
+
+\section{Programas de exemplo}
+
+\subsection*{\texttt{main.py}}
+\inputminted{python}{../main.py}
+
+\subsection*{\texttt{experiments.py}}
+\inputminted{python}{../experiments.py}
+
+\subsection*{\texttt{recursos\_observacao.py}}
+\inputminted{python}{../recursos_observacao.py}
+
+\setminted{fontsize=\footnotesize}

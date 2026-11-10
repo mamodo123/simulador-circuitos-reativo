@@ -4,8 +4,9 @@
 Este capítulo apresenta a proposta deste trabalho e descreve sua realização: uma biblioteca em Python que simula circuitos digitais por meio de propagação reativa de sinais, situada em relação aos trabalhos relacionados discutidos no Capítulo~\ref{cap:trabalhos}.
 
 \section{Visão Geral da Proposta}
+\label{sec:visao-proposta}
 
-A proposta consiste em uma biblioteca de simulação de circuitos digitais, e não em uma ferramenta gráfica ou uma linguagem de descrição de \textit{hardware}: o estudante escreve Python comum, instanciando e conectando objetos que representam sinais, portas lógicas e componentes sequenciais, e observa o comportamento do circuito diretamente no interpretador ou em um \textit{script}. Não há passo de compilação/síntese separado, nem ambiente de desenvolvimento dedicado: qualquer instalação padrão de Python 3, sem dependências externas, é suficiente.
+A proposta consiste em uma biblioteca de simulação de circuitos digitais, e não em uma ferramenta gráfica ou uma linguagem de descrição de \textit{hardware}: o estudante escreve Python comum, instanciando e conectando objetos que representam sinais, portas lógicas e componentes sequenciais, e observa o comportamento do circuito diretamente no interpretador ou em um \textit{script}. Não há passo de compilação/síntese separado, nem ambiente de desenvolvimento dedicado: qualquer instalação padrão de Python 3, sem dependências externas, é suficiente. O código-fonte completo da biblioteca está reproduzido no Apêndice~\ref{ap:biblioteca}, e os testes automatizados e os programas de exemplo usados no Capítulo~\ref{cap:resultados}, no Apêndice~\ref{ap:testes-exemplos}. Todo esse material, com as instruções de instalação e uso, também está disponível em repositório público \cite{esteche2026}, no endereço \url{https://github.com/mamodo123/simulador-circuitos-reativo}.
 
 Tecnicamente, a proposta se resume a dois compromissos de projeto:
 
@@ -464,7 +465,9 @@ class BehavioralAdder:
 \end{center}
 \end{algoritmo}
 
-As funções auxiliares usadas pelo \texttt{BehavioralAdder} estão no módulo \texttt{utils/binary\_conversion.py}, apresentado no Algoritmo~\ref{alg:binconv}: \texttt{sum\_via\_integer\_conversion} (Linhas 1--6) converte as duas entradas para inteiro com \texttt{binary\_array\_to\_int} (Linhas 9--11), soma os inteiros em Python, converte o resultado de volta para uma lista de \textit{bits} com \texttt{int\_to\_binary\_array} (Linhas 14--16) e, por fim, ajusta essa lista ao tamanho da entrada com \texttt{pad\_binary\_array} (Linhas 19--24).
+\begin{sloppypar}
+As funções auxiliares usadas pelo \texttt{BehavioralAdder} estão no módulo \texttt{utils/\allowbreak binary\_conversion.py}, apresentado no Algoritmo~\ref{alg:binconv}: \texttt{sum\_via\_integer\_conversion} (Linhas 1--6) converte as duas entradas para inteiro com \texttt{binary\_array\_to\_int} (Linhas 9--11), soma os inteiros em Python, converte o resultado de volta para uma lista de \textit{bits} com \texttt{int\_to\_binary\_array} (Linhas 14--16) e, por fim, ajusta essa lista ao tamanho da entrada com \texttt{pad\_binary\_array} (Linhas 19--24).
+\end{sloppypar}
 
 \begin{algoritmo}[H]
 \caption{Funções auxiliares de conversão e \textit{padding} binário (utils/binary\_conversion.py).}
@@ -858,7 +861,9 @@ A Figura~\ref{fig:dffregister} mostra essa composição para N = 3: cada \textit
 \end{center}
 \end{figure}
 
+\begin{sloppypar}
 O construtor do \texttt{DFlipFlopRegister} tem exatamente a mesma assinatura do \texttt{BehavioralRegister} (\texttt{clock}, \texttt{data\_in}, \texttt{feedback\_target}), o que permite trocar um pelo outro em qualquer circuito de exemplo sem alterar mais nada além do nome da classe instanciada, como no contador da Seção~\ref{sec:composicao}. Isso torna direta a comparação entre a abstração e sua contraparte real, validada na Seção~\ref{sec:contador-portas-real}.
+\end{sloppypar}
 
 \section{Composição de Circuitos}
 \label{sec:composicao}
@@ -975,7 +980,7 @@ Esses circuitos, junto com o comportamento dos três contadores em oito ou nove 
 
 \section{Tecnologias Utilizadas}
 
-O simulador foi implementado em Python 3, utilizando exclusivamente recursos da biblioteca padrão da linguagem, sem nenhuma dependência externa. Essa escolha reforça o objetivo do trabalho: o estudante pode executar e modificar o simulador com qualquer instalação padrão de Python, sem a necessidade de instalar ou configurar ferramentas adicionais. Cada módulo e cada classe da biblioteca possui uma \textit{docstring} descrevendo seu papel, de modo que a documentação de uso básico esteja disponível diretamente no código (por exemplo, via \texttt{help(BitArray)}), complementando a descrição arquitetural apresentada neste capítulo. Os testes automatizados descritos na Seção~\ref{sec:testes} também usam apenas o módulo \texttt{unittest} da biblioteca padrão.
+O simulador foi implementado em Python 3, utilizando exclusivamente recursos da biblioteca padrão da linguagem, sem nenhuma dependência externa. Essa escolha reforça o objetivo do trabalho: o estudante pode executar e modificar o simulador com qualquer instalação padrão de Python, sem a necessidade de instalar ou configurar ferramentas adicionais. Cada módulo e cada classe da biblioteca possui uma \textit{docstring} descrevendo seu papel, de modo que a documentação de uso básico esteja disponível diretamente no código (por exemplo, via \texttt{help(BitArray)}), complementando a descrição arquitetural apresentada neste capítulo. Os testes automatizados descritos na Seção~\ref{sec:testes} também usam apenas o módulo \texttt{unittest} da biblioteca padrão. O repositório do projeto \cite{esteche2026} traz ainda um arquivo \texttt{README} com o passo a passo para criar um ambiente virtual, executar os testes e os exemplos e compilar este texto.
 
 \section{A \textit{Engine} de Propagação}
 \label{sec:motor-interno}
