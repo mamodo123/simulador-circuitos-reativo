@@ -1,0 +1,98 @@
+\chapter{Trabalhos Relacionados}
+\label{cap:trabalhos}
+
+Este capítulo situa o simulador proposto em relação a iniciativas existentes que buscam, de formas distintas, reduzir a barreira de entrada no aprendizado de circuitos digitais. A Seção~\ref{sec:sim-graficos} discute simuladores gráficos e híbridos de circuitos digitais; a Seção~\ref{sec:hdls-python} discute bibliotecas e HDLs embutidas em Python; a Seção~\ref{sec:pedagogia-hdl} discute iniciativas pedagógicas voltadas especificamente para HDLs tradicionais como Verilog; e a Seção~\ref{sec:sintese-comparativa} sintetiza essas iniciativas em uma comparação e identifica a lacuna que este trabalho busca preencher.
+
+\section{Simuladores Gráficos e Híbridos de Circuitos Digitais}
+\label{sec:sim-graficos}
+
+O Logisim \cite{burch2002} é um simulador educacional de circuitos digitais de código aberto, voltado a disciplinas introdutórias, em que o usuário monta circuitos arrastando e conectando portas lógicas em um editor visual, sem escrever código. \citeonline{miquelini2021} analisaram o Logisim resolvendo exercícios de eletrônica digital e concluíram que, apesar de limitações pontuais (principalmente na ferramenta de análise usada para \textit{flip-flops}), suas vantagens (gratuidade, leveza e possibilidade de modificação) o tornam adequado ao ensino.
+
+O CircuitVerse \cite{circuitverse} adota abordagem semelhante, mas executada no navegador: o usuário monta circuitos visualmente e pode criar bancadas de teste (\textit{testbenches}) e validar o comportamento esperado com diagramas de tempo. \citeonline{savolainen2020} comparou Logisim e CircuitVerse em um contexto educacional, segundo critérios de facilidade de uso, eficiência e teste de circuitos, e identificou vantagens distintas em cada um: o Logisim mostrou-se mais eficiente e com mais elementos para a construção de circuitos, enquanto o CircuitVerse foi considerado mais fácil para começar e adequado ao ensino.
+
+O DigitalJS \cite{materzok2019} representa uma abordagem híbrida: o estudante escreve uma descrição em Verilog/SystemVerilog, que é sintetizada pela ferramenta Yosys e visualizada como um circuito de portas interativo no navegador, permitindo observar a propagação de sinais sobre o circuito sintetizado a partir do próprio código HDL. No contexto da própria UFSC, o FPGA Emulator Web \cite{fpgaemuweb}, desenvolvido por Eduardo Luiz Ortiz Batista, segue abordagem semelhante para VHDL: uma plataforma web que utiliza o GHDL como \textit{backend} para emular e simular descrições VHDL, sem exigir do estudante a instalação de ferramentas de síntese tradicionais.
+
+No âmbito profissional, ferramentas como o Proteus \cite{labcenter2026} (Labcenter Electronics) combinam esquemáticos de circuitos com simulação de modo misto baseada em SPICE, suportando circuitos analógicos, digitais e mistos. Seu caráter proprietário e sua complexidade, no entanto, o tornam menos adequado a um primeiro contato puramente didático com os conceitos de circuitos digitais.
+
+Em comum, essas ferramentas compartilham uma limitação relevante para os objetivos deste trabalho: operam como ambientes gráficos fechados, em que o estudante interage por meio de uma interface visual, mas não tem acesso à lógica de simulação subjacente nem pode estendê-la de forma programática.
+
+\section{Bibliotecas e HDLs Embutidas em Python}
+\label{sec:hdls-python}
+
+Uma segunda família de iniciativas modela \textit{hardware} diretamente em Python, adotando-o como linguagem hospedeira. O BinPy \cite{binpy} é uma biblioteca escrita inteiramente em Python, com componentes que vão de portas lógicas a \textit{flip-flops}, contadores e registradores, demonstrando a viabilidade de modelar eletrônica digital de forma orientada a objetos.
+
+O MyHDL \cite{decaluwe2004} vai além da simulação: permite descrever \textit{hardware} usando construtos nativos de Python, como geradores, e converter automaticamente um subconjunto desse código para Verilog sintetizável, funcionando como uma HDL alternativa; a conversão para VHDL foi incorporada em versões posteriores \cite{myhdl06}. O PyRTL \cite{clow2017} propõe um fluxo de projeto em nível RTL descrito em Python, tendo como objetivos centrais simplicidade, usabilidade, clareza e extensibilidade, em vez de desempenho ou otimização. \citeonline{mirza2019} relatam que o PyRTL permitiu que estudantes de segundo ano de graduação conduzissem pesquisa em arquitetura de computadores apoiando-se no conhecimento prévio de Python, em vez de exigir o aprendizado antecipado de Verilog ou VHDL, um relato de experiência, com uma equipe de quatro estudantes e análise qualitativa, que indica que a familiaridade prévia com Python pode ser aproveitada como ponte para o aprendizado de \textit{hardware}, tal como proposto neste trabalho.
+
+Em comum, BinPy, MyHDL e PyRTL demonstram que Python é uma linguagem hospedeira viável para modelar \textit{hardware}, mas diferem na forma como propagam as mudanças de sinal. O PyRTL avalia o circuito ciclo a ciclo, por meio de um laço de simulação. O MyHDL possui um simulador orientado a eventos, mas, assim como os simuladores de VHDL e Verilog, concentra o agendamento desses eventos em um núcleo de simulação central, separado dos componentes descritos pelo estudante. O BinPy é o que mais se aproxima da abordagem deste trabalho: suas portas lógicas podem ser ligadas por objetos \texttt{Connector} que, ao mudar de estado, disparam o recálculo das portas conectadas a eles, uma propagação distribuída entre os componentes semelhante à descrita na Seção~\ref{sec:reativo}. Nos elementos sequenciais, porém, alterar as entradas não atualiza o componente, e é necessário chamar explicitamente o método \texttt{trigger()} \cite{binpy}; além disso, o projeto não recebe atualizações de código desde 2016 e exige a instalação de um pacote à parte.
+
+No contexto local, o projeto simuGATE \cite{simugate2020}, desenvolvido por estudantes do Programa de Educação Tutorial de Engenharia Elétrica da UFSC (PET EEL), é um simulador de portas lógicas (OR, AND, NOT, NAND, NOR, XOR) implementado em Python com interface gráfica baseada na biblioteca Kivy, criado para ajudar estudantes de disciplinas de circuitos a simular o funcionamento dessas portas de forma simples. Seus componentes são apenas combinacionais, e a saída de cada porta é calculada a partir de uma lista de valores de entrada, sem propagação automática entre portas conectadas. Diferentemente das bibliotecas anteriores, e assim como o Logisim e o CircuitVerse, o simuGATE é voltado ao uso por meio de uma interface gráfica, e não à leitura do código dos componentes; o projeto, contudo, ficou em estágio de protótipo, com a ligação entre portas ainda não implementada.
+
+\section{Iniciativas Pedagógicas para HDLs Tradicionais}
+\label{sec:pedagogia-hdl}
+
+Um terceiro grupo de trabalhos não propõe alternativas às HDLs tradicionais, mas sim formas de facilitar seu aprendizado direto. \citeonline{ebeling2007} propuseram o Abstract Verilog, uma linguagem semelhante ao Verilog, com sintaxe restrita e semântica de execução paralela bem definida, para reduzir a carga cognitiva de estudantes iniciantes sem deixar de representar \textit{hardware}. \citeonline{jamieson2017} desenvolveu o verilogTown, um jogo educacional em que o jogador escreve trechos de Verilog para controlar sinais de trânsito, buscando engajar o estudante por meio de um ambiente lúdico; o autor relata que a turma que utilizou o jogo teve, em um dos exames, média cerca de 9 pontos percentuais superior à da turma do ano anterior, ressalvando que a comparação não foi acompanhada de testes estatísticos.
+
+\citeonline{imamura2005} descreve uma abordagem baseada em FPGAs de baixo custo para ensinar projeto de sistemas digitais a estudantes de Ciência da Computação com pouca ou nenhuma formação prévia em Engenharia Elétrica, argumentando que esse conteúdo é tradicionalmente associado a currículos de Engenharia. Em linha semelhante, \citeonline{azevedo2017} propôs, para o ensino de Eletrônica Digital, um método baseado em FPGA e VHDL fundamentado na aprendizagem ativa e o comparou à montagem tradicional de circuitos em protoboard; embora conclua que o FPGA pode ser usado como ferramenta de ensino, os estudantes consultados demonstraram resistência ao método: dos 15 respondentes, 46,67\% preferiram a montagem tradicional, outros 46,67\% preferiram ambos os métodos e nenhum optou exclusivamente pela descrição de circuitos em VHDL e FPGA, resultado que reforça a barreira de entrada das HDLs discutida no Capítulo~\ref{cap:introducao}. Esses trabalhos evidenciam que a dificuldade de aprendizado discutida na motivação deste trabalho (Capítulo~\ref{cap:introducao}) é reconhecida na literatura, mas suas soluções propostas (uma HDL simplificada, um jogo educacional, \textit{hardware} reconfigurável físico) atuam depois que o estudante já está diante da HDL ou do \textit{hardware} real, e não como uma etapa preparatória anterior a esse contato.
+
+\section{Síntese Comparativa e Lacuna Identificada}
+\label{sec:sintese-comparativa}
+
+A Tabela~\ref{tab:trabalhos-relacionados} compara as ferramentas discutidas neste capítulo e o simulador proposto segundo oito critérios. Alguns favorecem este trabalho e outros favorecem as demais ferramentas; a intenção é situar o simulador de forma justa, e não apenas destacar suas vantagens. Os critérios são:
+
+\begin{itemize}
+    \item \textbf{Interface}: se o circuito é montado por interface gráfica (G), por código (C) ou por código HDL visualizado graficamente (H);
+    \item \textbf{Sem instalação}: se a ferramenta pode ser usada no navegador ou com uma instalação padrão de Python, sem pacotes ou programas adicionais;
+    \item \textbf{Sequenciais (Seq.)}: se a ferramenta simula circuitos sequenciais (\textit{latches}, \textit{flip-flops}, registradores);
+    \item \textbf{Diagrama de tempo}: se oferece visualização da evolução dos sinais ao longo do tempo (diagrama de tempo ou forma de onda);
+    \item \textbf{Atraso}: se modela atraso de propagação das portas;
+    \item \textbf{HDL/FPGA}: se gera ou simula código HDL sintetizável, permitindo chegar a um circuito real em FPGA;
+    \item \textbf{Mecanismo no código}: se a propagação de sinais é implementada pelos próprios componentes que o estudante instancia, em código que ele lê e pode modificar, como no padrão \textit{Observer} (Seção~\ref{sec:reativo}), em vez de ser conduzida por uma interface gráfica, por chamadas explícitas ou por um núcleo de simulação separado;
+    \item \textbf{Aberto}: se o código-fonte é aberto.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\caption{Comparação entre trabalhos relacionados e o simulador proposto.}
+\label{tab:trabalhos-relacionados}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}p{1.8cm}*{8}{>{\centering\arraybackslash}p{1.1cm}}@{}}
+\hline
+\textbf{Ferramenta} & \textbf{Plataforma} & \textbf{Interf.} & \textbf{Sem\newline instal.} & \textbf{Seq.} & \textbf{Diagr.\newline tempo} & \textbf{Atraso} & \textbf{HDL/\newline FPGA} & \textbf{Mecan.\newline no cód.} & \textbf{Aberto} \\
+\hline
+Logisim & Java & G & \ding{55} & \ding{51} & \ding{55}$^{a}$ & \ding{51} & \ding{55}$^{a}$ & \ding{55} & \ding{51} \\
+CircuitVerse & Navegador & G & \ding{51} & \ding{51} & \ding{51} & \ding{51} & \ding{51} & \ding{55} & \ding{51} \\
+DigitalJS & Navegador (Verilog) & H & \ding{51} & \ding{51} & \ding{51} & ? & \ding{51} & \ding{55} & \ding{51} \\
+FPGA Emulator Web & Navegador (VHDL) & H & \ding{51} & \ding{51} & ? & ? & \ding{51} & \ding{55} & \ding{51} \\
+Proteus & Windows & G & \ding{55} & \ding{51} & \ding{51} & \ding{51} & \ding{55} & \ding{55} & \ding{55} \\
+BinPy & Python & C & P$^{b}$ & \ding{51} & P$^{c}$ & \ding{55} & \ding{55} & P$^{d}$ & \ding{51} \\
+MyHDL & Python & C & P$^{b}$ & \ding{51} & \ding{51} & \ding{51} & \ding{51} & P$^{e}$ & \ding{51} \\
+PyRTL & Python & C & P$^{b}$ & \ding{51} & \ding{51} & \ding{55} & \ding{51} & P$^{e}$ & \ding{51} \\
+simuGATE & Python/Kivy & G & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & P$^{f}$ \\
+\hline
+\textbf{Este trabalho} & \textbf{Python} & C & \ding{51} & \ding{51} & \ding{55} & \ding{55} & \ding{55} & \ding{51} & \ding{51} \\
+\hline
+\end{tabular}
+\par\vspace{2pt}
+{\raggedright\footnotesize \ding{51}: atende; \ding{55}: não atende; P: atende parcialmente; ?: não foi possível verificar na documentação disponível. Seq.: circuitos sequenciais. \\
+$^{a}$ O Logisim-evolution, derivado do Logisim, oferece cronograma de sinais e exportação para VHDL. \\
+$^{b}$ Exige apenas instalar o pacote com o gerenciador \texttt{pip}. \\
+$^{c}$ Osciloscópio em modo texto, escrito para Python 2. \\
+$^{d}$ Propagação distribuída por objetos \texttt{Connector} nas portas lógicas; nos elementos sequenciais, a atualização exige chamada explícita ao método \texttt{trigger()}. \\
+$^{e}$ O código é Python aberto, mas a propagação é conduzida por um núcleo de simulação (MyHDL) ou por um laço de simulação por ciclos (PyRTL), separado dos componentes. \\
+$^{f}$ Código-fonte público, mas sem licença de uso declarada no repositório.\par}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na documentação das ferramentas.
+\end{center}
+\end{table}
+
+A comparação mostra, em primeiro lugar, que este trabalho não atende a três critérios atendidos por várias das outras ferramentas: não oferece diagrama de tempo, não modela atraso de propagação e não gera código HDL nem permite chegar a um circuito em FPGA. Também não oferece interface gráfica para montagem de circuitos. Essas ausências são coerentes com o propósito do trabalho, que é servir como etapa preparatória para o estudo de circuitos digitais, e não substituir as ferramentas existentes:
+
+\begin{itemize}
+    \item a ausência de \textbf{interface gráfica} é deliberada: o objetivo é que o estudante descreva o circuito em texto, aproximando-se da forma de trabalho das HDLs que encontrará em seguida, papel que as ferramentas gráficas, já bem estabelecidas, não cumprem;
+    \item o \textbf{diagrama de tempo} é substituído, no escopo atual, pela impressão do estado a cada ciclo e pelos recursos de observação da Seção~\ref{sec:observacao}; sua implementação é possível sobre o mesmo mecanismo de \textit{listeners} e é apontada como trabalho futuro;
+    \item a ausência de \textbf{atraso de propagação} é uma simplificação: os conteúdos introdutórios visados (portas lógicas, somadores, registradores e contadores) dependem do comportamento lógico dos circuitos, e não de sua temporização; essa limitação é discutida na Seção~\ref{sec:limitacoes};
+    \item a \textbf{geração de HDL e síntese em FPGA} estão fora do escopo por definição: o simulador não pretende ser uma HDL, mas preparar o estudante para aprendê-la. Para esse fim, MyHDL e PyRTL, bem como as próprias HDLs, são as ferramentas adequadas.
+\end{itemize}
+
+Por outro lado, a comparação evidencia a lacuna que motiva este trabalho: nenhuma das ferramentas revisadas combina simultaneamente (i) uma linguagem já familiar ao estudante de Ciência da Computação, (ii) uso sem instalação além de um ambiente Python padrão e (iii) um mecanismo de propagação implementado pelos próprios componentes, em código que o estudante lê e pode modificar. As ferramentas gráficas e híbridas oferecem recursos mais completos de visualização e temporização, mas escondem a lógica de simulação atrás de uma interface; MyHDL e PyRTL atendem a (i), são as mais completas do ponto de vista de projeto de \textit{hardware} e atendem parcialmente a (iii), mas conduzem a propagação por um núcleo ou laço de simulação separado dos componentes; o BinPy é o que mais se aproxima, atendendo a (i) e, nas portas lógicas, a (iii), mas exige a instalação de um pacote, depende de chamadas explícitas nos elementos sequenciais e não é mantido desde 2016; e as iniciativas pedagógicas para HDLs tradicionais (Abstract Verilog, verilogTown) atuam sobre a própria HDL, sem oferecer uma etapa preparatória em uma linguagem já conhecida. É essa combinação específica, detalhada na Seção~\ref{sec:reativo} e implementada no Capítulo~\ref{cap:proposta}, que diferencia o simulador proposto neste trabalho.

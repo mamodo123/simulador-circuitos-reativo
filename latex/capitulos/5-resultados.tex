@@ -1,0 +1,504 @@
+\chapter{Resultados e Discussão}
+\label{cap:resultados}
+
+Este capítulo apresenta os resultados obtidos com a execução dos circuitos de exemplo descritos no Capítulo~\ref{cap:proposta}, comparando a saída produzida pelo simulador com o comportamento teoricamente esperado. Em seguida, descrevem-se os testes automatizados que verificam esses resultados e os recursos de observação e depuração que o simulador oferece, comparados aos de outras ferramentas, e discutem-se as limitações da abordagem.
+
+\section{Validação dos Circuitos Implementados}
+
+Esta seção percorre, em ordem crescente de complexidade, a validação de cada circuito descrito no Capítulo~\ref{cap:proposta}: da propagação reativa em uma única porta lógica até os três contadores binários e o \textit{flip-flop} \textit{toggle}, incluindo a validação do registrador construído com \textit{latches}.
+
+\subsection{Porta NOT Reativa}
+
+O primeiro teste verifica se uma porta lógica recalcula sua saída automaticamente quando sua entrada muda, sem que nenhum código externo solicite esse recálculo. Partindo de \texttt{a = BitArray([False, True, False])} e \texttt{not\_a = Not(a)}, obteve-se o resultado apresentado na Tabela~\ref{tab:not}.
+
+\begin{table}[H]
+\centering
+\caption{Propagação reativa através de uma porta NOT.}
+\label{tab:not}
+\begin{tabular}{l|l}
+\hline
+\textbf{Evento} & \textbf{not\_a.output} \\
+\hline
+Estado inicial (\texttt{a = [F, T, F]}) & \texttt{[T, F, T]} \\
+Após \texttt{a.output = [T, T, T]} & \texttt{[F, F, F]} \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+O resultado confirma que a alteração de \texttt{a.output} propagou-se automaticamente para \texttt{not\_a}, sem qualquer chamada explícita a um método de recálculo, validando o mecanismo de notificação descrito na Seção~\ref{sec:sinais}.
+
+\subsection{Meio-Somador e Somador Completo}
+
+O meio-somador (\texttt{Xor} para soma, \texttt{And} para \textit{carry}) foi testado com as quatro combinações possíveis de entrada de 1 \textit{bit}, reproduzindo exatamente a tabela-verdade esperada. O mesmo teste foi repetido para o \texttt{FullAdder} (Seção~\ref{sec:somador-portas}), incluindo agora um \textit{carry} de entrada. Os dois resultados são apresentados na Tabela~\ref{tab:somadores}.
+
+\begin{table}[H]
+\centering
+\caption{Saída do meio-somador e do somador completo comparadas à tabela-verdade esperada.}
+\label{tab:somadores}
+\begin{tabular}{ccc|cc}
+\hline
+$A$ & $B$ & $C_{in}$ & Soma & \textit{Carry-out} \\
+\hline
+\multicolumn{5}{l}{\textit{Meio-somador (sem carry de entrada)}} \\
+\hline
+0 & 0 & -- & 0 & 0 \\
+0 & 1 & -- & 1 & 0 \\
+1 & 0 & -- & 1 & 0 \\
+1 & 1 & -- & 0 & 1 \\
+\hline
+\multicolumn{5}{l}{\textit{Somador completo (8 combinações de $A$, $B$ e $C_{in}$)}} \\
+\hline
+0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 1 & 1 & 0 \\
+0 & 1 & 0 & 1 & 0 \\
+0 & 1 & 1 & 0 & 1 \\
+1 & 0 & 0 & 1 & 0 \\
+1 & 0 & 1 & 0 & 1 \\
+1 & 1 & 0 & 0 & 1 \\
+1 & 1 & 1 & 1 & 1 \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+Todos os valores obtidos corresponderam exatamente ao esperado pela álgebra booleana (Seção~\ref{sec:algebra-booleana}), tanto para o meio-somador (linhas superiores, sem \textit{carry} de entrada) quanto para o somador completo.
+
+
+\subsection{Registrador Simples}
+
+Um \texttt{BehavioralRegister} sem realimentação foi usado para validar a detecção de borda de subida isoladamente: antes de qualquer pulso de \textit{clock}, \texttt{register.output} permanece \texttt{None}; após \texttt{clock.output = True}, o valor de \texttt{data\_in.output} no instante da borda é capturado e mantido, mesmo que \texttt{data\_in.output} mude posteriormente sem um novo pulso de \textit{clock}, e mesmo quando o \textit{clock} volta a falso (borda de descida). O mesmo comportamento foi verificado com o \textit{clock} representado tanto como booleano (\texttt{BitArray(False)}) quanto como lista de um \textit{bit} (\texttt{BitArray([False])}). Esse comportamento confirma que o \texttt{BehavioralRegister} reage apenas à borda de subida do sinal de \textit{clock}, e não a mudanças na entrada de dados.
+
+\subsection{Contador Binário e \textit{Flip-Flop Toggle}}
+\label{sec:log-propagacao}
+
+Os dois circuitos com laço de realimentação foram validados pulsando o \textit{clock} repetidamente e comparando a sequência de saídas com a esperada para, respectivamente, um contador binário crescente (usando \texttt{BehavioralAdder}) e um \textit{flip-flop} que inverte de estado a cada pulso. As duas sequências obtidas são apresentadas na Tabela~\ref{tab:contador-toggle}.
+
+\begin{table}[H]
+\centering
+\caption{Saída do contador de 3 \textit{bits} e do \textit{flip-flop} \textit{toggle} ao longo de sucessivos pulsos de \textit{clock}.}
+\label{tab:contador-toggle}
+\begin{tabular}{c|l|l}
+\hline
+\textbf{Pulso} & \textbf{Contador (3 bits)} & \textbf{\textit{Flip-flop} \textit{toggle}} \\
+\hline
+1 & 001 & 1 \\
+2 & 010 & 0 \\
+3 & 011 & 1 \\
+4 & 100 & 0 \\
+5 & 101 & 1 \\
+6 & 110 & 0 \\
+7 & 111 & --- \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+Ambas as sequências corresponderam exatamente ao esperado: o contador incrementa uma unidade a cada pulso, e o \textit{flip-flop} \textit{toggle} alterna seu estado, confirmando que o \texttt{BehavioralRegister} realimentado é capaz de sustentar um circuito com estado persistente ao longo de múltiplos ciclos de \textit{clock}.
+
+Para tornar visível a ordem real de propagação dentro de um único pulso, um \textit{listener} de registro (\textit{log}) foi anexado a cada componente do circuito do \textit{flip-flop} \textit{toggle}. O Quadro~\ref{qua:log-toggle} mostra a saída obtida para um único pulso de \textit{clock}, evidenciando como o sinal se propaga em cadeia até se estabilizar.
+
+\begin{quadro}[H]
+\centering
+\caption{Log de propagação de um pulso de \textit{clock} no \textit{flip-flop} \textit{toggle}.}
+\label{qua:log-toggle}
+\begin{minipage}{0.6\textwidth}
+\begin{verbatim}
+estado antes do pulso: signal = [False]
+pulso de clock (False -> True):
+  toggle_logic: [True] -> [False]
+  signal:       [False] -> [True]
+  flip_flop:    [False] -> [True]
+  clock:        False -> True
+estado apos o pulso: signal = [True]
+\end{verbatim}
+\end{minipage}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{quadro}
+
+A ordem desse log só faz sentido à luz de como cada linha é impressa: o \textit{listener} de log foi registrado em cada sinal \textbf{depois} do \textit{listener} funcional que já existia desde a Seção~\ref{sec:composicao} (o próprio \texttt{BehavioralRegister}, no caso de \texttt{clock} e \texttt{flip\_flop}; o próprio \texttt{Xor}, no caso de \texttt{signal}), e a \textit{engine} notifica \textit{listeners} na ordem em que foram registrados (Seção~\ref{sec:motor-interno}). Assim, a atribuição \texttt{clock.output = True} primeiro dispara o \texttt{BehavioralRegister} (\texttt{flip\_flop}), que lê o valor já estabilizado de \texttt{toggle\_logic} (\texttt{True}) e o propaga para \texttt{signal}, que por sua vez dispara o recálculo de \texttt{toggle\_logic} (\texttt{False}) antes de qualquer linha ser impressa; só então, à medida que cada chamada de \texttt{trigger\_change} retorna, os quatro \textit{listeners} de log dessa cadeia disparam em ordem inversa à da causa: primeiro o de \texttt{toggle\_logic} (o mais interno, que recalculou por último), depois \texttt{signal}, depois \texttt{flip\_flop}, e por fim o de \texttt{clock} (o mais externo, que só é notificado quando a pilha de chamadas termina de desenrolar). Nenhum desses quatro componentes é notificado mais de uma vez, o que confirma que o circuito se estabiliza em uma única passada de propagação para esse caso.
+
+\subsection{Contador Binário Montado Só com Portas Lógicas}
+\label{sec:contador-portas}
+
+O mesmo contador foi refeito trocando o \texttt{BehavioralAdder} pelo \texttt{RippleCarryAdder} (Seção~\ref{sec:somador-portas}), permitindo observar também o sinal \texttt{carry\_out} a cada pulso, como mostra a Tabela~\ref{tab:contador-portas}.
+
+\begin{table}[H]
+\centering
+\caption{Contador de 3 \textit{bits} montado com RippleCarryAdder, com carry\_out.}
+\label{tab:contador-portas}
+\begin{tabular}{c|l|l}
+\hline
+\textbf{Pulso} & \textbf{Contador (3 bits)} & \textbf{carry\_out} \\
+\hline
+1 & 001 & 0 \\
+2 & 010 & 0 \\
+3 & 011 & 0 \\
+4 & 100 & 0 \\
+5 & 101 & 0 \\
+6 & 110 & 0 \\
+7 & 111 & 1 \\
+8 & 000 & 0 \\
+9 & 001 & 0 \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+O resultado reproduziu exatamente a sequência do contador com \texttt{BehavioralAdder}, com uma diferença importante: no pulso 7, assim que o valor \texttt{111} é realimentado para a entrada do somador, \texttt{carry\_out} sobe para \texttt{1}, sinalizando que a próxima soma (\texttt{111 + 001}) excede 3 \textit{bits}. No pulso 8, o \texttt{BehavioralRegister} captura a soma já ``estourada'' (\texttt{000}), e \texttt{carry\_out} volta a \texttt{0} porque a nova entrada do somador (\texttt{000}) não gera mais \textit{overflow}. Esse resultado confirma, na prática, o que foi projetado na Seção~\ref{sec:somador-portas}: o \textit{overflow} de um somador montado com portas lógicas aparece naturalmente em um sinal de \textit{carry} separado, sem exigir nenhum tratamento especial em código.
+
+\subsection{Registrador Real com \textit{Latches}}
+\label{sec:contador-portas-real}
+
+O \textit{latch} SR (Seção~\ref{sec:latches}) foi validado com a sequência clássica de \textit{set}, \textit{hold} e \textit{reset}, reproduzindo exatamente o comportamento esperado, como mostra a Tabela~\ref{tab:sr-latch}.
+
+\begin{table}[H]
+\centering
+\caption{Validação do \textit{latch} SR (NOR cruzado).}
+\label{tab:sr-latch}
+\begin{tabular}{cc|l}
+\hline
+$S$ & $R$ & $Q$ \\
+\hline
+1 & 0 & \texttt{[True]} (\textit{set}) \\
+0 & 0 & \texttt{[True]} (\textit{hold}, mantém o valor anterior) \\
+0 & 1 & \texttt{[False]} (\textit{reset}) \\
+0 & 0 & \texttt{[False]} (\textit{hold}, mantém o valor anterior) \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+O \texttt{DFlipFlop} (Seção~\ref{sec:latches}) foi então validado com um sinal $D$ independente, alternando o \textit{clock} e o próprio $D$ em momentos distintos para confirmar a sensibilidade exclusiva à borda de subida. A saída produzida pelo programa \texttt{experiments.py} é apresentada no Quadro~\ref{qua:dff}.
+
+\begin{quadro}[H]
+\centering
+\caption{Validação do \texttt{DFlipFlop} isolado.}
+\label{qua:dff}
+\begin{minipage}{0.9\textwidth}
+\begin{verbatim}
+D=1, clock sobe -> Q=[True] (capturou D)
+D muda p/ 0 com clock ainda em 1 -> Q=[True] (nao muda)
+clock desce (1->0) -> Q=[True] (flip-flop so muda na borda de subida)
+clock sobe de novo com D=0 -> Q=[False] (capturou o novo D)
+\end{verbatim}
+\end{minipage}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{quadro}
+
+O resultado confirma que o \texttt{DFlipFlop} reproduz, a partir de portas lógicas reais, o mesmo comportamento observável do \texttt{BehavioralRegister}: a saída só se atualiza no instante da borda de subida do \textit{clock}, permanecendo estável mesmo que $D$ mude enquanto o \textit{clock} está em nível alto ou baixo.
+
+O \textit{flip-flop} \textit{toggle} da Seção~\ref{sec:composicao} foi então reproduzido substituindo o \texttt{BehavioralRegister} pelo \texttt{DFlipFlop} (isto é, realimentando a própria saída, invertida, de volta para a entrada $D$). Diferentemente do \texttt{BehavioralRegister}, que quebra qualquer ciclo de realimentação lendo \texttt{data\_in} apenas no instante exato da borda de \textit{clock}, o \texttt{DFlipFlop} depende inteiramente da separação de transparência entre o \textit{latch} mestre e o \textit{latch} escravo (Seção~\ref{sec:latches}) para que essa realimentação não degenere em um laço puramente combinacional: a ordem de notificação do simulador (Seção~\ref{sec:motor-interno}) garante que \texttt{not\_clock} feche o \textit{latch} mestre antes de as portas do \textit{latch} escravo serem notificadas, preservando essa separação a cada pulso de \textit{clock}. O resultado é apresentado na Tabela~\ref{tab:toggle-dff}.
+
+\begin{table}[H]
+\centering
+\caption{Saída do \textit{flip-flop} \textit{toggle} montado com DFlipFlop.}
+\label{tab:toggle-dff}
+\begin{tabular}{c|l}
+\hline
+\textbf{Pulso} & \textbf{Saída} \\
+\hline
+Estado inicial & 1 \\
+1 & 0 \\
+2 & 1 \\
+3 & 0 \\
+4 & 1 \\
+5 & 0 \\
+6 & 1 \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+A sequência alterna estritamente a cada pulso, com o mesmo padrão observado para o \textit{flip-flop} \textit{toggle} construído sobre o \texttt{BehavioralRegister} (Seção~\ref{sec:log-propagacao}), a menos de uma defasagem de fase: o estado inicial começa em 1 em vez de 0. Em um circuito físico, o valor de $Q$ antes do primeiro pulso de \textit{clock} seria indeterminado; no simulador, ele é sempre o mesmo, mas arbitrário: decorre do valor inicial atribuído ao \texttt{BitArray} de proxy usado para fechar o laço do \texttt{SRLatch} (\texttt{[False]}, Linha 7 do Algoritmo~\ref{alg:srlatch}), que faz com que $Q = \overline{R}$ na construção e, portanto, $Q = 1$ enquanto o \textit{latch} não está habilitado. Trata-se de um artefato da inicialização, e não de um defeito na propagação.
+
+Para validar esse comportamento em uma escala maior do que um único \textit{flip-flop}, o contador de 3 \textit{bits} montado com \texttt{RippleCarryAdder} (Seção~\ref{sec:contador-portas}) foi reconstruído trocando também o \texttt{BehavioralRegister} pelo \texttt{DFlipFlopRegister} (Seção~\ref{sec:dflipflop-register}), um registrador de N \textit{bits} montado inteiramente com portas lógicas. A Tabela~\ref{tab:comparacao-registradores} compara o resultado, lado a lado, com o contador de referência (que usa o \texttt{BehavioralRegister}).
+
+\begin{table}[H]
+\centering
+\caption{Contador de 3 \textit{bits} com BehavioralRegister comparado ao mesmo contador com DFlipFlopRegister.}
+\label{tab:comparacao-registradores}
+\begin{tabular}{c|l|l}
+\hline
+\textbf{Pulso} & \textbf{BehavioralRegister} & \textbf{DFlipFlopRegister} \\
+\hline
+Estado inicial & \texttt{None} & 111 \\
+1 & 001 & 000 \\
+2 & 010 & 001 \\
+3 & 011 & 010 \\
+4 & 100 & 011 \\
+5 & 101 & 100 \\
+6 & 110 & 101 \\
+7 & 111 (carry\_out=1) & 110 \\
+8 & 000 & 111 (carry\_out=1) \\
+9 & 001 & 000 \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{table}
+
+As duas sequências são idênticas, inclusive no pulso em que o \textit{overflow} ocorre, a menos da mesma defasagem de uma posição já explicada para o \textit{flip-flop} \textit{toggle}: o \texttt{DFlipFlopRegister} começa em \texttt{111} porque cada um dos três \texttt{DFlipFlop} que o compõem parte do mesmo valor inicial arbitrário ($Q = 1$) antes do primeiro pulso de \textit{clock}. Esse resultado estende a validação de um único \textit{bit} realimentado para um registrador completo de N \textit{bits}, sem que nenhuma das duas classes (\texttt{BehavioralRegister} e \texttt{DFlipFlopRegister}) precisasse de qualquer ajuste específico para lidar com múltiplos \textit{bits}: o \texttt{DFlipFlopRegister} reaproveita, sem alterações, a mesma técnica de composição por \texttt{BitSlice} e \texttt{Bus} já usada pelo \texttt{RippleCarryAdder} (Seção~\ref{sec:somador-portas}). Vale notar o escopo dessa validação: ela comprova que este caso específico, exaustivamente testado, estabiliza corretamente, mas não que toda topologia de realimentação combinacional através de \textit{latches} estabiliza sob a mesma convenção de ordenação, ressalva retomada na Seção~\ref{sec:limitacoes}.
+
+\section{Testes Automatizados}
+\label{sec:testes}
+
+Os resultados apresentados na seção anterior foram inicialmente obtidos executando o programa \texttt{experiments.py} e comparando visualmente sua saída com o comportamento esperado. Para que essa validação seja reproduzível e não dependa de inspeção manual, cada um desses resultados foi transformado em um caso de teste automatizado no arquivo \texttt{tests/test\_circuitos.py}, escrito com o módulo \texttt{unittest} da biblioteca padrão de Python. Os testes verificam, por meio de asserções, a porta NOT reativa, o meio-somador, o somador completo nas oito combinações de entrada, o \texttt{RippleCarryAdder} de 3 \textit{bits} em todas as 64 combinações de operandos (incluindo o \texttt{carry\_out}), a captura do \texttt{BehavioralRegister} apenas na borda de subida, os três contadores ao longo de nove pulsos de \textit{clock}, o \textit{latch} SR, o \texttt{DFlipFlop} isolado e os dois \textit{flip-flops} \textit{toggle}.
+
+Um dos testes cobre especificamente o defeito de detecção de borda do \texttt{BehavioralRegister} descrito na Seção~\ref{sec:register}: com o \textit{clock} representado como lista (\texttt{BitArray([False])}), ele verifica que o valor capturado não muda na borda de descida. Esse teste falhava com a versão anterior do componente e passa com a versão atual. Os treze testes são executados com o comando \texttt{python -m unittest discover -s tests -t .} e, na versão final do simulador, todos passam.
+
+\section{Recursos de Observação e Depuração}
+\label{sec:observacao}
+
+Como cada componente do simulador é um objeto Python comum, e a propagação acontece por chamadas de função entre esses objetos (Seção~\ref{sec:motor-interno}), o estudante pode observar e interrogar o circuito usando a mesma linguagem com que o construiu, sem nenhuma ferramenta adicional. Dois desses recursos já foram usados neste capítulo: a impressão do estado a cada ciclo de \textit{clock} (Tabelas~\ref{tab:contador-toggle} a \ref{tab:comparacao-registradores}) e o registro da ordem de propagação dentro de um único pulso (Quadro~\ref{qua:log-toggle}). Esta seção apresenta outros cinco, todos reunidos no programa \texttt{recursos\_observacao.py} e executados para produzir as saídas reproduzidas a seguir, e compara esses recursos aos oferecidos pelas ferramentas discutidas no Capítulo~\ref{cap:trabalhos}.
+
+\subsection{Estados Transitórios (\textit{Glitches})}
+
+Em um somador estrutural, o resultado não aparece de uma só vez: cada estágio só pode calcular sua soma depois de receber o \textit{carry} do estágio anterior, e a saída passa por valores intermediários até se estabilizar. No simulador, basta registrar um \textit{listener} na saída do somador para observar esses valores. O Exemplo~\ref{ex:transitorios} monta, sobre as mesmas entradas, um \texttt{RippleCarryAdder} e um \texttt{BehavioralAdder} de 4 \textit{bits}, e altera a entrada \texttt{b} de forma que o \textit{carry} precise atravessar três estágios ($0111 + 0001$).
+
+\begin{exemplo}[H]
+\caption{Observação dos estados transitórios de um somador.}
+\label{ex:transitorios}
+\begin{minted}{python}
+a = BitArray([False, True, True, True])      # 0111
+b = BitArray([False, False, False, False])   # 0000
+estrutural = RippleCarryAdder(a, b).sum
+comportamental = BehavioralAdder(a, b)
+estrutural.add_listener(lambda old, new: print("estrutural:    ", bits(new)))
+comportamental.add_listener(lambda old, new: print("comportamental:", bits(new)))
+b.output = [False, False, False, True]       # 0111 + 0001 = 1000
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+O Quadro~\ref{qua:transitorios} mostra que a saída do somador estrutural passou por três valores intermediários antes de chegar a \texttt{1000}, enquanto o somador comportamental, que calcula a soma de uma vez em Python, passou diretamente ao resultado final.
+
+\begin{quadro}[H]
+\centering
+\caption{Saídas observadas durante a propagação do Exemplo~\ref{ex:transitorios}.}
+\label{qua:transitorios}
+\begin{minipage}{0.5\textwidth}
+\begin{verbatim}
+estrutural:     0110
+estrutural:     1110
+estrutural:     1010
+estrutural:     1000
+comportamental: 1000
+\end{verbatim}
+\end{minipage}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{quadro}
+
+Esse resultado torna visível, de forma concreta, a diferença entre as duas descrições e a natureza sequencial da propagação do \textit{carry} em um \textit{ripple-carry adder}. É preciso, porém, interpretá-lo com cuidado: como o simulador não modela atraso de propagação (Seção~\ref{sec:limitacoes}), a sequência exata de valores intermediários é determinada pela ordem de notificação dos \textit{listeners}, e não por atrasos físicos. Ela ilustra qualitativamente o fenômeno, mas não prevê os transitórios de um circuito real específico.
+
+\subsection{Atividade de Chaveamento}
+
+A mesma técnica permite contar quantas vezes os sinais internos de um circuito mudam durante uma operação, medida conhecida como atividade de chaveamento, à qual se relacionam o tempo de estabilização e o consumo dinâmico de energia de circuitos reais. O Exemplo~\ref{ex:atividade} usa a lista \texttt{full\_adders} do \texttt{RippleCarryAdder} (Algoritmo~\ref{alg:rca}) para registrar um contador em cada saída de soma e de \textit{carry} dos oito estágios de um somador de 8 \textit{bits}, e soma 1 a dois valores iniciais diferentes.
+
+\begin{exemplo}[H]
+\caption{Contagem da atividade de chaveamento de um somador de 8 \textit{bits}.}
+\label{ex:atividade}
+\begin{minted}{python}
+for inicial in ([False] * 8, [False] + [True] * 7):
+    a = BitArray(inicial)
+    b = BitArray([False] * 8)
+    somador = RippleCarryAdder(a, b)
+    mudancas = []
+    for estagio in somador.full_adders:
+        estagio.sum.add_listener(lambda old, new: mudancas.append(1))
+        estagio.carry_out.add_listener(lambda old, new: mudancas.append(1))
+    b.output = [False] * 7 + [True]          # soma 1
+    print(f"{bits(inicial)} + 00000001: {len(mudancas)} mudança(s)")
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+Como mostra o Quadro~\ref{qua:atividade}, somar 1 a \texttt{00000000} altera um único sinal interno, enquanto somar 1 a \texttt{01111111}, que obriga o \textit{carry} a percorrer sete estágios, altera quinze. O estudante pode, assim, verificar experimentalmente por que o pior caso de um \textit{ripple-carry adder} é a propagação do \textit{carry} pela cadeia inteira.
+
+\begin{quadro}[H]
+\centering
+\caption{Atividade de chaveamento medida pelo Exemplo~\ref{ex:atividade}.}
+\label{qua:atividade}
+\begin{minipage}{0.6\textwidth}
+\begin{verbatim}
+00000000 + 00000001: 1 mudança(s)
+01111111 + 00000001: 15 mudança(s)
+\end{verbatim}
+\end{minipage}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{quadro}
+
+\subsection{Sondas com Asserções}
+
+Um \textit{listener} não precisa apenas imprimir valores: ele pode verificar uma condição e interromper a simulação quando ela é violada, funcionando como uma sonda que vigia o circuito continuamente. O Exemplo~\ref{ex:sonda} registra, nas entradas de um \texttt{SRLatch}, uma sonda que detecta a combinação inválida $S = R = 1$ (Seção~\ref{sec:latches}) no exato instante em que ela ocorre.
+
+\begin{exemplo}[H]
+\caption{Sonda que detecta a combinação inválida do \textit{latch} SR.}
+\label{ex:sonda}
+\begin{minted}{python}
+s, r = BitArray([False]), BitArray([False])
+latch = SRLatch(s, r)
+
+def sonda(old, new):
+    assert not (s.output[0] and r.output[0]), "combinação inválida S = R = 1"
+
+s.add_listener(sonda)
+r.add_listener(sonda)
+s.output = [True]
+r.output = [True]    # dispara a sonda
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+A primeira atribuição é aceita normalmente; a segunda interrompe a execução com a mensagem definida pelo estudante, como mostra o Quadro~\ref{qua:sonda}. Por ser uma exceção comum de Python, ela pode ser capturada, registrada ou usada para encerrar um teste automatizado.
+
+\begin{quadro}[H]
+\centering
+\caption{Saída do Exemplo~\ref{ex:sonda}.}
+\label{qua:sonda}
+\begin{minipage}{0.7\textwidth}
+\begin{verbatim}
+S=1 R=0 -> Q = 1
+AssertionError: combinação inválida S = R = 1
+\end{verbatim}
+\end{minipage}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{quadro}
+
+\subsection{Caminho da Propagação}
+
+Como a propagação de uma mudança é uma cadeia de chamadas de função (Seção~\ref{sec:motor-interno}), a pilha de chamadas do Python registra, a cada instante, exatamente por quais componentes o sinal passou. O Exemplo~\ref{ex:caminho} aproveita esse fato: um \textit{listener} no \texttt{carry\_out} de um somador de 2 \textit{bits} percorre a pilha com o módulo \texttt{inspect} da biblioteca padrão e imprime o tipo de cada componente encontrado.
+
+\begin{exemplo}[H]
+\caption{Reconstrução do caminho percorrido por uma mudança de sinal.}
+\label{ex:caminho}
+\begin{minted}{python}
+a = BitArray([True, True])                   # 11
+b = BitArray([False, False])                 # 00
+somador = RippleCarryAdder(a, b)
+
+def caminho(old, new):
+    componentes = [type(f.frame.f_locals["self"]).__name__
+                   for f in inspect.stack()
+                   if "self" in f.frame.f_locals]
+    print(" -> ".join(reversed(componentes)))
+
+somador.carry_out.add_listener(caminho)
+b.output = [False, True]                     # 11 + 01
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+O resultado, apresentado no Quadro~\ref{qua:caminho}, é o caminho do \textit{carry} pelo circuito: a mudança em \texttt{b} chega ao \textit{bit} menos significativo por um \texttt{BitSlice}, gera um \textit{carry} na porta \texttt{And} (\texttt{and\_ab}) e na porta \texttt{Or} (\texttt{carry\_out}) do primeiro estágio e é repassada às portas \texttt{And} (\texttt{and\_xor\_carry}) e \texttt{Or} do segundo estágio (Figura~\ref{fig:full-adder}). O mesmo efeito pode ser obtido de forma interativa colocando uma chamada a \texttt{breakpoint()} dentro do \textit{listener}: a simulação é pausada no meio da propagação e o depurador padrão do Python permite inspecionar cada componente da pilha.
+
+\begin{quadro}[H]
+\centering
+\caption{Caminho da propagação impresso pelo Exemplo~\ref{ex:caminho}.}
+\label{qua:caminho}
+\begin{minipage}{0.6\textwidth}
+\begin{verbatim}
+BitArray -> BitSlice -> And -> Or -> And -> Or
+\end{verbatim}
+\end{minipage}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026), com base na execução do simulador.
+\end{center}
+\end{quadro}
+
+\subsection{Equivalência entre Descrições}
+
+Por fim, como o circuito é um objeto Python, ele pode ser instanciado dentro de laços, o que permite gerar tabelas-verdade completas ou comparar automaticamente duas descrições do mesmo componente. O Exemplo~\ref{ex:equivalencia} verifica, para todas as 64 combinações de dois operandos de 3 \textit{bits}, que o somador estrutural e o comportamental produzem a mesma soma; ao final da execução, o programa imprime ``64 combinações verificadas: as duas descrições são equivalentes''. Esse tipo de verificação aproxima o estudante, ainda em uma linguagem conhecida, da prática de verificação usada no projeto de \textit{hardware}, em que uma descrição estrutural é comparada a um modelo de referência comportamental.
+
+\begin{exemplo}[H]
+\caption{Verificação exaustiva de equivalência entre as descrições estrutural e comportamental.}
+\label{ex:equivalencia}
+\begin{minted}{python}
+for x, y in product(range(8), repeat=2):
+    a, b = BitArray(to_bits(x, 3)), BitArray(to_bits(y, 3))
+    assert RippleCarryAdder(a, b).sum.output == BehavioralAdder(a, b).output
+print("64 combinações verificadas: as duas descrições são equivalentes")
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+\subsection{Comparação com Outras Ferramentas}
+
+Vários desses recursos têm equivalentes em outras ferramentas: simuladores de HDL oferecem diagramas de tempo e asserções; o CircuitVerse combina atrasos configuráveis por componente com um diagrama de tempo, que permite observar transitórios e condições de corrida; e o Logisim permite avançar a propagação passo a passo pela interface. A diferença está na forma como são oferecidos. Nas ferramentas gráficas e nos simuladores de HDL, cada recurso é uma funcionalidade pronta, com comportamento definido pela ferramenta; no simulador deste trabalho, todos eles são escritos pelo próprio estudante, em poucas linhas de Python, sobre o mesmo mecanismo de \textit{listeners} que faz o circuito funcionar, e podem ser combinados ou adaptados livremente. A Tabela~\ref{tab:recursos-ferramentas} resume essa comparação para as ferramentas discutidas no Capítulo~\ref{cap:trabalhos}.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{Recursos de observação e depuração em diferentes ferramentas.}
+\label{tab:recursos-ferramentas}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.7cm}*{6}{>{\centering\arraybackslash}p{1.45cm}}@{}}
+\hline
+\textbf{Recurso} & \textbf{Logisim} & \textbf{Circuit-\newline Verse} & \textbf{DigitalJS} & \textbf{Sim.\newline HDL} & \textbf{MyHDL/\newline PyRTL} & \textbf{Este\newline trabalho} \\
+\hline
+Valores a cada ciclo de \textit{clock} & I & F & F & F & F & Py \\
+Transitórios dentro de um passo & P & F & -- & P & -- & Py \\
+Sondas e asserções & -- & F & -- & F & Py & Py \\
+Atividade de chaveamento & -- & -- & -- & P & Py & Py \\
+Caminho da propagação & -- & -- & -- & P & -- & Py \\
+Equivalência entre descrições & -- & F & -- & F & Py & Py \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize I: pela interface gráfica; F: recurso pronto da ferramenta; P: parcial ou apenas em algumas versões/ferramentas; Py: escrito em Python pelo próprio usuário; --: não oferecido. \\
+Fonte: elaborada pelo autor (2026), com base nas ferramentas descritas no Capítulo~\ref{cap:trabalhos}.
+\end{center}
+\end{table}
+
+A coluna ``Sim. HDL'' agrupa simuladores como GHDL e ModelSim, cujos recursos variam entre si; as indicações ``P'' refletem recursos como a visualização de ciclos delta e a cobertura de alternância de sinais (\textit{toggle coverage}), disponíveis apenas em parte desses simuladores. Para MyHDL e PyRTL, ``Py'' indica que o recurso pode ser escrito em Python sobre os sinais da biblioteca, mas a propagação em si continua encapsulada em seu núcleo de simulação (Seção~\ref{sec:hdls-python}), o que impede, por exemplo, reconstruir o caminho de uma mudança porta a porta. O traço comum da última coluna é, portanto, o argumento central deste trabalho visto sob outro ângulo: o mecanismo de simulação é parte do código que o estudante lê e escreve.
+
+\section{Limitações da Abordagem}
+\label{sec:limitacoes}
+
+A validação dos circuitos de exemplo também expôs limitações da implementação atual, relevantes tanto para o uso didático do simulador quanto para trabalhos futuros:
+
+\begin{itemize}
+    \item As portas \texttt{Or}, \texttt{And} e \texttt{Xor} assumem que as duas entradas possuem o mesmo número de \textit{bits}, comparando-as índice a índice; não há verificação explícita desse pré-requisito, e um descompasso de tamanho resulta em erro de execução (\texttt{IndexError}) em vez de uma mensagem de erro didática;
+    \item O \texttt{BehavioralRegister} suporta apenas um único sinal de \texttt{clock}, sem sinais adicionais como \textit{reset} assíncrono ou \textit{enable} independente do \textit{clock};
+    \item O simulador não modela atraso de propagação: todas as portas reagem instantaneamente, no mesmo instante lógico. Isso é suficiente para os circuitos combinacionais e para todos os circuitos sequenciais testados neste trabalho, incluindo o \texttt{DFlipFlop} realimentado sobre si mesmo (Seção~\ref{sec:contador-portas-real}), desde que a ordem de notificação dos \textit{listeners} respeite a ordem de construção dos componentes; a ausência de um modelo de tempo simulado permanece, ainda assim, uma limitação em relação a um simulador de eventos discretos completo, e não há garantia de que topologias de realimentação através de \textit{latches} mais complexas do que as testadas aqui estabilizem sob a mesma convenção de ordenação.
+\end{itemize}
+
+\section{Discussão}
+\label{sec:discussao}
+
+Os resultados obtidos indicam que o modelo de propagação reativa, baseado no padrão \textit{Observer}, é adequado para reproduzir corretamente o comportamento de circuitos digitais combinacionais e sequenciais de pequena escala: em todos os circuitos testados, a saída do simulador correspondeu exatamente ao comportamento esperado, incluindo os dois tratamentos de \textit{overflow} discutidos (o truncamento do \texttt{BehavioralAdder}, Seção~\ref{sec:behavioral-adder}, e o \texttt{carry\_out} do \texttt{RippleCarryAdder}, Seção~\ref{sec:contador-portas}).
+
+A coexistência desses dois somadores no simulador não é uma inconsistência, mas um reflexo do objetivo geral deste trabalho: apoiar o aprendizado dos conceitos introdutórios da disciplina de Circuitos e Técnicas Digitais. O \texttt{RippleCarryAdder} representa a forma tecnicamente correta de montar um somador, inteiramente a partir de portas lógicas, e evidencia como o \textit{overflow} surge da própria topologia do circuito. Já o \texttt{BehavioralAdder} demonstra que o simulador permite misturar Python ``puro'' com o restante do circuito reativo quando o objeto de estudo do momento é outro (por exemplo, o comportamento do registrador), sem obrigar o estudante a montar toda a aritmética com portas lógicas antes de poder experimentar com registradores e realimentação. O mesmo raciocínio vale para o par \texttt{BehavioralRegister} e \texttt{DFlipFlopRegister}. Os circuitos implementados cobrem, assim, os elementos centrais dessa etapa inicial do currículo: portas lógicas, propagação de sinais, um somador (nas duas variantes) e um componente de memória sensível a \textit{clock} (também nas duas variantes). A implementação inteiramente em Python, sem dependências externas, mantém o ambiente de execução idêntico ao já utilizado pelo estudante na disciplina de Programação Orientada a Objetos, eliminando a barreira de ferramental discutida na motivação (Capítulo~\ref{cap:introducao}).
+
+Por outro lado, as limitações apontadas na seção anterior, em particular a ausência de outros componentes combinacionais comuns, como multiplexadores, delimitam o alcance atual do simulador a um conjunto reduzido de conceitos introdutórios, não sendo ainda suficiente para representar circuitos de maior complexidade, como uma \gls{ula} ou um banco de registradores. Essas limitações são retomadas como sugestões de trabalhos futuros no Capítulo~\ref{cap:conclusao}.

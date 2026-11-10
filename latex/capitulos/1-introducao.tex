@@ -1,0 +1,49 @@
+\chapter{Introdução}
+\label{cap:introducao}
+
+Circuitos digitais formam a base de praticamente todos os sistemas computacionais modernos, e seu estudo é parte obrigatória da formação em Ciência da Computação. No currículo do curso de Ciência da Computação da \gls{ufsc}, esse conteúdo é introduzido na disciplina de Circuitos e Técnicas Digitais, na qual os estudantes têm o primeiro contato formal com portas lógicas, álgebra booleana, circuitos combinacionais e sequenciais, e com uma \gls{hdl}, tipicamente \gls{vhdl}.
+
+Paralelamente, é comum que esses mesmos estudantes estejam cursando, no mesmo período ou em período próximo, a disciplina de \gls{poo}, que utiliza Python como linguagem principal. O resultado é que o aluno transita, dentro de um curto intervalo de tempo, entre dois paradigmas de programação extremamente distintos: de um lado, Python, uma linguagem imperativa, sequencial, de sintaxe enxuta e com um ciclo de desenvolvimento quase instantâneo (editar, executar, ver o resultado); de outro, VHDL, uma linguagem declarativa e concorrente, com sintaxe verbosa e formal, que descreve \textit{hardware} e não um programa a ser executado passo a passo.
+
+A motivação deste trabalho nasce justamente dessa distância entre as duas experiências de aprendizado vividas pelo estudante de Ciência da Computação. Observam-se, na prática, algumas dificuldades recorrentes:
+
+\begin{itemize}
+    \item \textbf{Distância de paradigma e de sintaxe}: enquanto em Python o aluno já está habituado a um código curto e direto, VHDL exige a declaração explícita de entidades, arquiteturas, sinais, tipos e processos antes mesmo de descrever a lógica desejada. Essa sintaxe extensa e formal, combinada com um modelo de execução concorrente pouco intuitivo para quem só programou de forma sequencial, torna os primeiros contatos com a disciplina de Circuitos e Técnicas Digitais particularmente custosos;
+    \item \textbf{Ambientes de desenvolvimento pesados e pouco ágeis}: as \glspl{ide} tradicionalmente utilizadas para VHDL (como Quartus, da Intel, ou Vivado, da Xilinx/AMD) são ferramentas robustas, voltadas para síntese em \glspl{fpga} reais, porém pesadas, lentas para abrir e configurar, e com uma curva de aprendizado própria que é somada à da linguagem em si;
+    \item \textbf{Tempo de compilação/síntese elevado}: diferentemente do ciclo quase instantâneo de ``salvar e rodar'' ao qual o aluno está acostumado em Python, a simulação ou síntese de um circuito VHDL pode levar segundos a minutos, mesmo para exemplos simples. Esse tempo de espera atrapalha a experimentação rápida e a construção de intuição sobre o comportamento do circuito, que é justamente o tipo de aprendizado que se beneficia de iteração rápida e \textit{feedback} imediato;
+    \item \textbf{O problema não é exclusivo do VHDL}: linguagens de descrição de \textit{hardware} aparentadas, como Verilog e SystemVerilog, compartilham a mesma natureza concorrente, sintaxe formal e ecossistema de ferramentas pesado, de modo que a dificuldade relatada aqui não é uma particularidade do VHDL, mas sim das HDLs tradicionais como classe de linguagem.
+\end{itemize}
+
+A busca por ferramentas que tornem os conteúdos de \textit{hardware} mais acessíveis a estudantes de Computação não é recente. Há mais de duas décadas, \citeonline{hackersitte2004} propuseram um ambiente interativo para o ensino de lógica digital combinacional e sequencial, motivados pela falta de \textit{software} de apoio adequado a esse ensino. Mais recentemente, \citeonline{garay2019} recorreram à visualização de simulações em VHDL para ensinar um tópico de Arquitetura e Organização de Computadores que, na experiência dos autores, é bastante complexo para os estudantes, evidenciando que mesmo o VHDL tem sido usado como meio, e não como fim, em iniciativas que buscam reduzir barreiras de aprendizado.
+
+Na comunidade brasileira de educação em computação, dois mapeamentos sistemáticos recentes sintetizam parte dessa produção. \citeonline{santini2023} identificaram treze jogos educacionais voltados ao ensino de Circuitos Digitais publicados nos últimos dez anos, partindo da constatação de que ``a disciplina de Circuitos Lógicos muitas vezes é considerada tediosa pelos alunos'' \cite[p.~814]{santini2023}; em relato de experiência anterior, \citeonline{carvalhonakamura2013} já haviam observado falta de interesse dos alunos pela disciplina, vista por eles como um assunto próprio da Engenharia. Já \citeonline[p.~240]{dondici2025} abrem seu mapeamento afirmando que ``o ensino de Circuitos Lógicos, embora essencial nos cursos de Computação, enfrenta desafios pela complexidade dos conceitos''. A complexidade também aparece em tópicos mais específicos da área: \citeonline[p.~191]{jurgina2021} observam que a complexidade do tema confiabilidade de circuitos ``é uma barreira para que seu estudo seja incorporado em sala de aula'', o que motivou o desenvolvimento de uma ferramenta dedicada a esse ensino. Na literatura internacional, \citeonline{haase2022} propõe uma ferramenta de simulação interativa de circuitos digitais, executada no navegador, para apoiar o modelo de sala de aula invertida e o estudo autônomo. A dificuldade também se reflete em dados de evasão: em um estudo sobre os cursos de Computação da Universidade Estadual de Maringá, \citeonline{fukao2023} estimaram taxas de evasão acumuladas de 47,6\% em Ciência da Computação e de 54,5\% em Informática para os ingressantes de 2005 a 2021, e os estudantes evadidos apontaram a didática adotada pelos professores como o principal fator percebido como impactante para a evasão. Em conjunto, essas evidências situam a dificuldade aqui relatada como um problema reconhecido e ativamente pesquisado há pelo menos duas décadas, tanto na literatura internacional quanto na comunidade brasileira de educação em computação.
+
+Diante desse cenário, este trabalho parte da hipótese de que um simulador de circuitos digitais implementado em Python, linguagem com a qual o estudante já possui familiaridade prévia por meio da disciplina de POO, pode servir como uma etapa intermediária de aprendizado, permitindo que os conceitos fundamentais de portas lógicas, propagação de sinais e componentes sequenciais (como registradores) sejam compreendidos em um ambiente leve, de execução imediata e sintaxe já conhecida, antes que o aluno enfrente a barreira adicional imposta pelas HDLs.
+
+\section{Problema}
+
+Como apoiar o aprendizado dos conceitos básicos de circuitos digitais (portas lógicas, propagação de sinais e componentes sequenciais) de forma que o estudante de Ciência da Computação possa se concentrar na lógica do circuito em si, sem que a sintaxe, o ambiente de desenvolvimento e o tempo de compilação de uma HDL tradicional se tornem obstáculos adicionais nesse primeiro contato?
+
+\section{Objetivos}
+
+O objetivo geral deste trabalho é desenvolver, em Python, um simulador didático de circuitos digitais baseado em propagação reativa de sinais, capaz de apoiar o aprendizado dos conceitos introdutórios da disciplina de Circuitos e Técnicas Digitais.
+
+Os objetivos específicos são:
+
+\begin{itemize}
+    \item Modelar uma abstração de barramento de \textit{bits} (sinal), capaz de notificar automaticamente os componentes conectados a ele quando seu valor muda;
+    \item Implementar as portas lógicas básicas (NOT, AND, OR, XOR) como componentes que recalculam sua saída automaticamente a partir da propagação de mudanças em suas entradas;
+    \item Implementar um componente de registrador (\textit{latch}/\textit{flip-flop}) sensível a borda de subida de um sinal de \textit{clock}, permitindo a construção de circuitos sequenciais e de memória;
+    \item Demonstrar, a partir desses componentes básicos, a construção de circuitos compostos (por exemplo, um meio-somador, um contador binário e um \textit{flip-flop} do tipo \textit{toggle});
+    \item Avaliar, por meio desses circuitos de exemplo, se a abordagem proposta reproduz corretamente o comportamento esperado dos circuitos digitais correspondentes.
+\end{itemize}
+
+\section{Justificativa}
+
+Este trabalho se justifica por atacar um obstáculo concreto observado na trajetória de estudantes de Ciência da Computação: o salto abrupto entre a programação em Python (aprendida em POO) e a descrição de \textit{hardware} em VHDL (exigida em Circuitos e Técnicas Digitais). Ao propor uma ferramenta que utiliza uma linguagem já familiar ao aluno para modelar os mesmos conceitos (portas lógicas, propagação de sinais, registradores), pretende-se reduzir a carga cognitiva do primeiro contato com a disciplina, isolando a dificuldade dos conceitos de circuitos digitais da dificuldade adicional imposta pela sintaxe e pelas ferramentas de uma HDL.
+
+Além do valor pedagógico, o desenvolvimento do simulador também tem valor técnico: sua implementação exige a aplicação de conceitos de engenharia de \textit{software} (como o padrão de projeto \textit{Observer} e a programação orientada a eventos) para resolver um problema de domínio distinto (simulação de \textit{hardware}), evidenciando a transferência de conceitos entre áreas do curso de Ciência da Computação.
+
+\section{Estrutura do Trabalho}
+
+O restante deste trabalho está organizado da seguinte forma: o Capítulo~\ref{cap:fundamentacao} apresenta a fundamentação teórica necessária, cobrindo circuitos digitais, HDLs e o modelo de programação reativa/padrão \textit{Observer}; o Capítulo~\ref{cap:trabalhos} discute trabalhos relacionados, incluindo outros simuladores de circuitos digitais e iniciativas pedagógicas para HDLs; o Capítulo~\ref{cap:proposta} descreve a arquitetura e a implementação do simulador; o Capítulo~\ref{cap:resultados} apresenta os circuitos construídos como estudo de caso e discute os resultados obtidos; e o Capítulo~\ref{cap:conclusao} traz as considerações finais e sugestões de trabalhos futuros.

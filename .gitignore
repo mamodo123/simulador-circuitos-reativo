@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+
+# Configurações locais de ferramentas
+.claude/
+.vscode/
+.idea/
+
+# LaTeX: arquivos intermediários de compilação
+latex/*.aux
+latex/*.log
+latex/*.toc
+latex/*.lof
+latex/*.lot
+latex/*.loa
+latex/*.loe
+latex/*.loq
+latex/*.acn
+latex/*.acr
+latex/*.alg
+latex/*.glg
+latex/*.glo
+latex/*.gls
+latex/*.ist
+latex/*.bbl
+latex/*.blg
+latex/*.out
+latex/*.fls
+latex/*.fdb_latexmk
+latex/*.synctex.gz
+latex/_minted*/
+
+# Fonte gerada automaticamente da versão comparativa (o PDF é mantido)
+latex/main-diff.tex

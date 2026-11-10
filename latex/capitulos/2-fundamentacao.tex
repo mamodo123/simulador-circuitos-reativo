@@ -1,0 +1,103 @@
+\chapter{Fundamentação Teórica}
+\label{cap:fundamentacao}
+
+Este capítulo apresenta os conceitos necessários para compreender o restante do trabalho: os fundamentos de circuitos digitais que o simulador precisa reproduzir corretamente (Seção~\ref{sec:circuitos-digitais}), as linguagens de descrição de \textit{hardware} que motivam a proposta (Seção~\ref{sec:hdls}) e o modelo de programação reativa/padrão \textit{Observer} sobre o qual o simulador é construído (Seção~\ref{sec:reativo}). Trabalhos relacionados, incluindo outros simuladores e iniciativas pedagógicas para HDLs, são discutidos separadamente no Capítulo~\ref{cap:trabalhos}.
+
+\section{Circuitos Digitais}
+\label{sec:circuitos-digitais}
+
+Circuitos digitais são sistemas que operam sobre sinais discretos, representados por apenas dois níveis lógicos: 0 (falso/baixo) e 1 (verdadeiro/alto). Essa representação binária confere aos sistemas digitais maior robustez a ruído e simplicidade de projeto quando comparados a circuitos analógicos, que operam sobre grandezas contínuas \cite{tocci2011, floyd2007}.
+
+A unidade fundamental de informação é o \textbf{\textit{bit}}. Um conjunto ordenado de \textit{bits} forma um \textbf{barramento} (\textit{bus}); um barramento de $n$ \textit{bits} representa $2^n$ valores distintos, potencialmente interpretados como um número inteiro sem sinal em notação binária posicional (por exemplo, o barramento de 3 \textit{bits} \texttt{101} corresponde ao decimal 5). No simulador desenvolvido neste trabalho, essa noção de barramento é representada diretamente por uma lista de valores booleanos, encapsulada na classe \texttt{BitArray} (detalhada no Capítulo~\ref{cap:proposta}).
+
+\subsection{Álgebra Booleana e Portas Lógicas}
+\label{sec:algebra-booleana}
+
+O comportamento dos circuitos digitais é descrito formalmente pela álgebra booleana, que define operações sobre valores lógicos. As operações elementares (\textbf{NOT}, \textbf{AND}, \textbf{OR} e \textbf{XOR}) são implementadas fisicamente por \textbf{portas lógicas}, cujo comportamento é resumido pelas tabelas-verdade da Tabela~\ref{tab:tabelas-verdade}.
+
+\begin{table}[H]
+\centering
+\caption{Tabelas-verdade das portas lógicas básicas.}
+\label{tab:tabelas-verdade}
+\begin{tabular}{cc|c|c|c|c}
+\hline
+$A$ & $B$ & NOT $A$ & $A$ AND $B$ & $A$ OR $B$ & $A$ XOR $B$ \\
+\hline
+0 & 0 & 1 & 0 & 0 & 0 \\
+0 & 1 & 1 & 0 & 1 & 1 \\
+1 & 0 & 0 & 0 & 1 & 1 \\
+1 & 1 & 0 & 1 & 1 & 0 \\
+\hline
+\end{tabular}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base na convenção usual de tabelas-verdade \cite{tocci2011}.
+\end{center}
+\end{table}
+
+A Figura~\ref{fig:simbolos-portas} apresenta os símbolos tradicionais, de formato distintivo, usados para representar essas quatro portas em diagramas de circuitos, notação empregada nas figuras deste trabalho.
+
+\begin{figure}[H]
+\centering
+\caption{Símbolos padronizados das portas lógicas NOT, AND, OR e XOR.}
+\label{fig:simbolos-portas}
+\begin{circuitikz}[scale=0.8, every node/.style={transform shape}]
+\draw (0,0) node[not port] (n1) {};
+\draw (3.2,0) node[and port] (n2) {};
+\draw (6.4,0) node[or port] (n3) {};
+\draw (9.6,0) node[xor port] (n4) {};
+\draw (n1.in) -- ++(-0.5,0) node[left]{$A$};
+\draw (n2.in 1) -- ++(-0.5,0) node[left]{$A$};
+\draw (n2.in 2) -- ++(-0.5,0) node[left]{$B$};
+\draw (n3.in 1) -- ++(-0.5,0) node[left]{$A$};
+\draw (n3.in 2) -- ++(-0.5,0) node[left]{$B$};
+\draw (n4.in 1) -- ++(-0.5,0) node[left]{$A$};
+\draw (n4.in 2) -- ++(-0.5,0) node[left]{$B$};
+\draw (n1.out) -- ++(0.5,0);
+\draw (n2.out) -- ++(0.5,0);
+\draw (n3.out) -- ++(0.5,0);
+\draw (n4.out) -- ++(0.5,0);
+\node[below=0.4cm of n1] {NOT};
+\node[below=0.4cm of n2] {AND};
+\node[below=0.4cm of n3] {OR};
+\node[below=0.4cm of n4] {XOR};
+\end{circuitikz}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base nos símbolos tradicionais de portas lógicas \cite{tocci2011}.
+\end{center}
+\end{figure}
+
+Circuitos mais complexos são obtidos pela composição dessas portas elementares. Quando a saída de um circuito depende apenas dos valores presentes em suas entradas no instante atual, sem depender de estados anteriores, ele é chamado de \textbf{circuito combinacional}.
+
+\subsection{Circuitos Sequenciais, \textit{Clock} e Registradores}
+
+Diferentemente dos circuitos combinacionais, \textbf{circuitos sequenciais} possuem memória: sua saída depende não apenas das entradas atuais, mas também de um estado interno armazenado. Esse estado é tipicamente mantido em elementos de memória elementares, como \textbf{\textit{latches}} e \textbf{\textit{flip-flops}}, e sua atualização é coordenada por um sinal de \textbf{\textit{clock}}, um sinal periódico que alterna entre os níveis 0 e 1.
+
+Um \textbf{\textit{flip-flop} sensível a borda} atualiza seu estado apenas no instante em que o \textit{clock} transiciona de um nível para outro (por exemplo, na borda de subida, isto é, na transição de 0 para 1), permanecendo estável no restante do tempo. Um \textbf{registrador} é, em sua forma mais simples, um \textit{flip-flop} (ou um conjunto deles) que armazena um valor de múltiplos \textit{bits}, capturando o valor presente em sua entrada de dados no instante da borda de \textit{clock}. Esse é exatamente o comportamento reproduzido pela classe \texttt{BehavioralRegister} do simulador, em lógica Python, e pelo \texttt{DFlipFlopRegister}, em nível de portas lógicas: ambos só atualizam sua saída quando o sinal usado como \textit{clock} transiciona de falso para verdadeiro.
+
+Registradores realimentados, isto é, cuja saída alimenta, direta ou indiretamente, sua própria entrada, são a base para a construção de circuitos com estado persistente, como contadores e acumuladores, que serão usados como estudo de caso neste trabalho.
+
+\subsection{Somadores Binários}
+
+O \textbf{meio-somador} (\textit{half adder}) é o circuito combinacional mais simples capaz de somar dois \textit{bits}: sua saída de soma é dada por $A \oplus B$ (uma porta XOR) e sua saída de \textit{carry} (vai-um) por $A \cdot B$ (uma porta AND). O \textbf{somador completo} (\textit{full adder}) estende essa ideia somando também um \textit{carry} de entrada, permitindo o encadeamento de somadores para compor um somador de múltiplos \textit{bits} (\textit{ripple-carry adder}).
+
+Um aspecto relevante para este trabalho é o conceito de \textbf{\textit{overflow}}: quando a soma de dois números representados em $n$ \textit{bits} excede o maior valor representável nesses $n$ \textit{bits} ($2^n - 1$), o resultado ``estoura'' a largura do barramento. Em um contador de \textit{hardware} real, esse comportamento se manifesta como um \textit{wraparound}: os \textit{bits} mais significativos que excedem a largura são descartados, e o contador retorna a zero. No simulador, esse comportamento surge naturalmente no somador montado com portas lógicas, mas precisa ser reproduzido explicitamente no somador comportamental, como discutido no Capítulo~\ref{cap:proposta}.
+
+\section{Linguagens de Descrição de \textit{Hardware}}
+\label{sec:hdls}
+
+Além da montagem física ou do desenho esquemático, circuitos digitais podem ser projetados por meio de \textbf{linguagens de descrição de \textit{hardware}} (\glspl{hdl}), das quais VHDL e Verilog (e sua evolução, SystemVerilog) são as mais utilizadas tanto na indústria quanto na academia. \Glspl{hdl} permitem descrever o comportamento e a estrutura de um circuito em um nível de abstração mais alto que o esquemático de portas, sendo posteriormente processadas por ferramentas de síntese que as convertem em circuitos configuráveis em \glspl{fpga} ou fabricáveis em \glspl{asic}.
+
+Essas linguagens distinguem dois estilos de descrição de um mesmo componente. Na \textbf{descrição estrutural} (\textit{structural}), o componente é definido pelas partes que o compõem e pelas ligações entre elas, como em um esquemático: um somador de N \textit{bits} é descrito como N somadores completos interligados, e cada somador completo como um conjunto de portas. Na \textbf{descrição comportamental} (\textit{behavioral}), o componente é definido pelo que ele faz, por meio de construções de alto nível da linguagem (operadores aritméticos, condicionais, processos sensíveis a eventos), sem especificar de quais portas ele é feito: o mesmo somador pode ser descrito simplesmente como \texttt{s <= a + b} \cite{ashenden2008}. Ambos os estilos são usados na prática, muitas vezes no mesmo projeto, e o simulador deste trabalho adota a mesma distinção: os componentes com prefixo \texttt{Behavioral} são descrições comportamentais escritas em Python, e cada um tem uma contraparte estrutural montada com portas lógicas (Capítulo~\ref{cap:proposta}).
+
+O aspecto central que distingue uma \gls{hdl} de uma linguagem de programação de propósito geral como Python é o seu \textbf{modelo de execução}: enquanto um programa em Python é executado de forma sequencial, instrução após instrução, uma descrição em VHDL ou Verilog representa \textit{hardware}: todos os processos e atribuições concorrentes descritos no código correspondem a componentes que operam \textbf{simultaneamente}, reagindo a mudanças em seus sinais de entrada a qualquer momento, e não em uma ordem definida pela posição do código no arquivo-fonte.
+
+Essa diferença de paradigma, somada à sintaxe formal exigida por essas linguagens (declaração explícita de entidades, arquiteturas, sinais tipados, sensibilidade de processos, entre outros elementos) e ao fluxo de trabalho baseado em compilação/síntese, tipicamente mais lento que o ciclo de execução imediata de uma linguagem interpretada, compõe o conjunto de barreiras discutido na motivação deste trabalho (Capítulo~\ref{cap:introducao}). SystemVerilog, por sua vez, estende Verilog com recursos adicionais de verificação e modelagem, mas preserva a mesma natureza concorrente subjacente, de modo que compartilha as mesmas barreiras de aprendizado aqui discutidas.
+
+\section{Programação Reativa e o Padrão \textit{Observer}}
+\label{sec:reativo}
+
+Em um circuito digital físico, uma mudança de sinal em um ponto se propaga em cadeia por todas as conexões dependentes, e não instantaneamente: cada porta lógica introduz um pequeno atraso de propagação entre a mudança em sua entrada e a atualização de sua saída. O simulador desenvolvido neste trabalho abstrai esse atraso, tratando a propagação como instantânea (sem noção de tempo simulado); as implicações dessa simplificação são discutidas na Seção~\ref{sec:contador-portas-real}. A \textbf{programação reativa} é um paradigma de programação orientado à propagação automática de mudanças: um valor reativo notifica automaticamente todos os elementos que dependem dele sempre que muda, sem que o código cliente precise solicitar essa atualização explicitamente \cite{bainomugisha2013}.
+
+A principal vantagem desse paradigma em relação à programação imperativa convencional está em quem fica responsável por manter os valores dependentes atualizados. No estilo imperativo, cada vez que um valor muda o programador precisa lembrar de recalcular, na ordem certa, tudo o que depende dele, seja chamando funções de atualização espalhadas pelo código, seja consultando periodicamente (\textit{polling}) se algo mudou; esquecer uma dessas chamadas deixa o programa em um estado inconsistente, e a ordem correta de recálculo precisa ser conhecida e mantida manualmente. Na programação reativa, as dependências são declaradas uma única vez, no momento em que os elementos são conectados, e a responsabilidade de propagar as mudanças passa a ser do próprio mecanismo de execução: os dependentes são sempre recalculados a partir dos valores atuais, e apenas o que de fato depende do valor alterado é recalculado \cite{bainomugisha2013}. Em comparação com um modelo de avaliação explícita, em que o circuito inteiro é reavaliado a cada passo de simulação mesmo que nada tenha mudado, a abordagem reativa evita trabalho redundante e, sobretudo, aproxima a estrutura do programa da estrutura do problema: as conexões entre objetos passam a ser o próprio grafo de dependências, assim como os fios de um circuito definem quais portas reagem a quais sinais. Para o propósito didático deste trabalho, essa correspondência é a vantagem mais relevante, pois o código que o estudante escreve para conectar componentes descreve diretamente o circuito, e não um procedimento para simulá-lo.
+
+O \textbf{padrão de projeto \textit{Observer}} \cite{gamma1994} oferece um mecanismo direto para implementar esse comportamento em uma linguagem orientada a objetos: um objeto observado (\textit{subject}) mantém uma lista de observadores (\textit{observers}, chamados de \textit{listeners} neste trabalho) e os notifica sempre que seu estado muda, sem precisar conhecer os detalhes de cada observador. Aplicado à simulação de circuitos digitais, cada componente (porta lógica, somador, registrador) atua simultaneamente como observador de suas entradas e como sujeito observado por quem estiver conectado à sua saída, formando a cadeia de propagação que reproduz o comportamento de um circuito real. A arquitetura concreta do simulador desenvolvido, construída sobre esse padrão, é apresentada no Capítulo~\ref{cap:proposta}, precedida por uma discussão de trabalhos relacionados no Capítulo~\ref{cap:trabalhos}.

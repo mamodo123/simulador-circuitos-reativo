@@ -1,0 +1,1018 @@
+\chapter{Proposta}
+\label{cap:proposta}
+
+Este capítulo apresenta a proposta deste trabalho e descreve sua realização: uma biblioteca em Python que simula circuitos digitais por meio de propagação reativa de sinais, situada em relação aos trabalhos relacionados discutidos no Capítulo~\ref{cap:trabalhos}.
+
+\section{Visão Geral da Proposta}
+
+A proposta consiste em uma biblioteca de simulação de circuitos digitais, e não em uma ferramenta gráfica ou uma linguagem de descrição de \textit{hardware}: o estudante escreve Python comum, instanciando e conectando objetos que representam sinais, portas lógicas e componentes sequenciais, e observa o comportamento do circuito diretamente no interpretador ou em um \textit{script}. Não há passo de compilação/síntese separado, nem ambiente de desenvolvimento dedicado: qualquer instalação padrão de Python 3, sem dependências externas, é suficiente.
+
+Tecnicamente, a proposta se resume a dois compromissos de projeto:
+
+\begin{itemize}
+    \item \textbf{propagação reativa}, e não avaliação sob demanda: cada componente recalcula e notifica automaticamente sua saída sempre que uma de suas entradas muda (padrão \textit{Observer}, Seção~\ref{sec:reativo}), em vez de exigir uma chamada explícita de ``simular'' ou ``avaliar'' o circuito;
+    \item \textbf{composição a partir de portas lógicas} como forma preferencial de construir componentes maiores (somadores, \textit{latches}, registradores), reservando descrições comportamentais em lógica Python (Seção~\ref{sec:hdls}; como o \texttt{BehavioralAdder}, Seção~\ref{sec:behavioral-adder}, e o \texttt{BehavioralRegister}, Seção~\ref{sec:register}) para quando o objetivo de um teste ou demonstração é outra parte do circuito.
+\end{itemize}
+
+O restante deste capítulo descreve a implementação que realiza essa proposta: a arquitetura geral (Seção~\ref{sec:visao-arquitetura}), a representação de sinais (Seção~\ref{sec:sinais}), as portas lógicas (Seção~\ref{sec:portas}), os dois somadores (Seções~\ref{sec:somador-portas} e \ref{sec:behavioral-adder}), os componentes sequenciais, incluindo o registrador em lógica Python e sua contraparte construída com \textit{latches} (Seções~\ref{sec:register} e \ref{sec:latches}), e a composição desses componentes nos circuitos de exemplo validados no Capítulo~\ref{cap:resultados}. Ao final (Seção~\ref{sec:motor-interno}), a \textit{engine} de propagação é revisitada em conjunto, amarrando o que cada seção apresentou separadamente.
+
+\section{Visão Geral da Arquitetura}
+\label{sec:visao-arquitetura}
+
+Todos os componentes do simulador seguem o mesmo contrato, definido informalmente pelas seguintes três operações:
+
+\begin{itemize}
+    \item uma propriedade \texttt{output}, que expõe o valor atual do sinal do componente (um valor booleano ou uma lista de valores booleanos);
+    \item um método \texttt{add\_listener(fn)}, que registra uma função \texttt{fn(old, new)} a ser chamada sempre que \texttt{output} mudar;
+    \item um método \texttt{trigger\_change(old, new)}, chamado internamente para recalcular a saída do componente e notificar seus próprios \textit{listeners}.
+\end{itemize}
+
+Esse contrato implementa o padrão \textit{Observer} descrito na Seção~\ref{sec:reativo}: cada componente é, ao mesmo tempo, observador das suas entradas (registrando-se como \textit{listener} delas no momento em que é construído) e sujeito observado por quem estiver conectado à sua saída.
+
+O contrato não é implementado por meio de uma interface ou classe abstrata explícita em Python (nenhuma classe deste trabalho herda de outra): cada componente simplesmente define os mesmos três membros por conta própria, e o encaixe entre eles é garantido pela convenção, não pelo compilador. A Figura~\ref{fig:diagrama-classes} representa esse contrato implícito como a interface \texttt{ReactiveComponent}, e mostra, para um subconjunto representativo de classes de cada pacote, a relação de realização (linha tracejada com seta vazada) e as principais dependências de composição entre componentes (linha tracejada rotulada ``usa'').
+
+\begin{figure}[H]
+\centering
+\caption{Diagrama de classes (subconjunto representativo) do contrato reativo comum.}
+\label{fig:diagrama-classes}
+\begin{tikzpicture}[scale=0.8, every node/.style={transform shape}]
+\begin{interface}[text width=6.5cm]{ReactiveComponent}{0,0}
+\operation{+output}
+\operation{+add\_listener(listener)}
+\operation{+trigger\_change(old, new)}
+\end{interface}
+
+\begin{class}[text width=2.2cm]{BitArray}{-8.4,-4}
+\implement{ReactiveComponent}
+\end{class}
+
+\begin{class}[text width=1.6cm]{Xor}{-5.7,-4}
+\implement{ReactiveComponent}
+\end{class}
+
+\begin{class}[text width=2.8cm]{BehavioralRegister}{-2.6,-4}
+\implement{ReactiveComponent}
+\end{class}
+
+\begin{class}[text width=2.2cm]{SRLatch}{0.6,-4}
+\implement{ReactiveComponent}
+\end{class}
+
+\begin{class}[text width=2.2cm]{DFlipFlop}{3.6,-4}
+\implement{ReactiveComponent}
+\end{class}
+
+\begin{class}[text width=4.0cm]{RippleCarryAdder}{7.8,-4}
+\implement{ReactiveComponent}
+\end{class}
+
+\begin{class}[text width=2.2cm]{DLatch}{2.1,-7}
+\end{class}
+
+\begin{class}[text width=2.4cm]{FullAdder}{7.8,-7}
+\end{class}
+
+\draw[dashed,->] (RippleCarryAdder.south) -- (FullAdder.north) node[midway, right]{\scriptsize usa};
+\draw[dashed,->] (DFlipFlop.south) |- (DLatch.east) node[pos=0.25, right]{\scriptsize usa};
+\draw[dashed,->] (DLatch.west) -| (SRLatch.south) node[pos=0.75, left]{\scriptsize usa};
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+A Figura~\ref{fig:propagacao} ilustra essa cadeia de observadores para o circuito contador que será detalhado na Seção~\ref{sec:composicao}: cada seta indica um componente registrado como \textit{listener} de outro, e o laço inferior mostra o valor capturado pelo registrador sendo realimentado para a entrada do somador.
+
+\begin{figure}[H]
+\centering
+\caption{Cadeia de propagação reativa do contador binário realimentado.}
+\label{fig:propagacao}
+\begin{tikzpicture}[
+    box/.style={draw, rectangle, minimum width=2.6cm, minimum height=1cm, align=center},
+    sig/.style={draw, rectangle, rounded corners, minimum width=2.4cm, minimum height=0.9cm, align=center},
+    >={Latex[length=2.5mm]}
+]
+    \node[sig] (const) at (0,0) {\texttt{increment}\\(constante 001)};
+    \node[box] (adder) at (4,0) {\texttt{BehavioralAdder}};
+    \node[box] (register) at (8,0) {\texttt{BehavioralRegister}};
+    \node[sig] (value) at (4,-2.2) {\texttt{counter\_value}};
+    \node[sig] (clock) at (8,-2.2) {\texttt{clock}};
+
+    \draw[->] (const) -- (adder);
+    \draw[->] (adder) -- node[above]{\scriptsize \texttt{data\_in}} (register);
+    \draw[->] (value) -- (adder);
+    \draw[->] (clock) -- (register);
+    \draw[->] (register.east) -- ++(0.8,0) |- ($(value.south)+(0,-0.8)$) node[pos=0.75, below]{\scriptsize realimenta (\texttt{feedback\_target})} -- (value.south);
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+\section{Representação de Sinais}
+\label{sec:sinais}
+
+O pacote \texttt{signals} contém as três classes responsáveis por representar sinais/barramentos de \textit{bits}.
+
+\subsection{\texttt{BitArray}}
+
+A classe \texttt{BitArray} representa um sinal, seja ele um \textit{bit} único ou um barramento de múltiplos \textit{bits}. Em termos de circuito, um \texttt{BitArray} de um único \textit{bit} corresponde a um fio, e um \texttt{BitArray} de N \textit{bits} corresponde a um conjunto de N fios agrupados em um barramento, como ilustra a Figura~\ref{fig:fios}.
+
+\begin{figure}[H]
+\centering
+\caption{Um fio (\texttt{BitArray} de 1 \textit{bit}) e um barramento de três fios (\texttt{BitArray} de 3 \textit{bits}).}
+\label{fig:fios}
+\begin{tikzpicture}[>={Latex[length=2.5mm]}]
+    % (a) um fio
+    \node[anchor=east] at (0,0) {\texttt{BitArray([True])}};
+    \draw[->] (0.2,0) -- (3.0,0);
+    \node[anchor=west] at (4.2,0) {\small (a) um fio};
+    % (b) barramento de 3 fios
+    \node[anchor=east] at (0,-1.8) {\texttt{BitArray([True, False, True])}};
+    \draw[line width=1.6pt] (0.2,-1.8) -- (1.8,-1.8);
+    \draw (0.85,-2.05) -- (1.15,-1.55);
+    \node[above] at (1.0,-1.6) {\scriptsize 3};
+    \draw[line width=1.6pt] (1.8,-2.4) -- (1.8,-1.2);
+    \foreach \y/\t in {-1.35/[0], -1.8/[1], -2.25/[2]} {
+        \draw[->] (1.8,\y) -- (3.0,\y) node[right]{\scriptsize \texttt{\t}};
+    }
+    \node[anchor=west] at (4.2,-1.8) {\small (b) barramento de 3 fios};
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+Seu construtor recebe o valor inicial, e a propriedade \texttt{output} intercepta toda atribuição para notificar os \textit{listeners} registrados, como mostra o Algoritmo~\ref{alg:bitarray}.
+
+\begin{algoritmo}[H]
+\caption{Classe BitArray (signals/bit\_array.py).}
+\label{alg:bitarray}
+\begin{minted}{python}
+class BitArray:
+    def __init__(self, initial_value):
+        self._output = initial_value
+        self._listeners = []
+
+    @property
+    def output(self):
+        return self._output
+
+    @output.setter
+    def output(self, value):
+        previous_output = self._output
+        if value == previous_output:
+            return
+        self._output = value
+        for listener in self._listeners:
+            listener(previous_output, value)
+
+    def add_listener(self, listener):
+        self._listeners.append(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+O uso do decorador \texttt{@property} (Linhas 6 e 10 do Algoritmo~\ref{alg:bitarray}) é o que torna a notificação transparente: do ponto de vista do código cliente, \texttt{sinal.output = novo\_valor} é uma simples atribuição, mas internamente ela dispara a notificação de todos os componentes conectados a esse sinal.
+
+\subsection{\texttt{BitSlice} e \texttt{Bus}}
+
+As portas lógicas (Seção~\ref{sec:portas}) operam elemento a elemento sobre barramentos do mesmo tamanho, mas não propagam \textit{carry} entre posições de \textit{bit}. Para montar um somador de N \textit{bits} com propagação de \textit{carry} (Seção~\ref{sec:somador-portas}), é preciso operar em cada \textit{bit} individualmente. Duas classes auxiliares resolvem esse problema:
+
+\begin{itemize}
+    \item \texttt{BitSlice(source, index)} projeta um único \textit{bit} de um sinal maior como um sinal próprio de 1 \textit{bit}, atualizando-se automaticamente quando \texttt{source} muda;
+    \item \texttt{Bus(bits)} faz o caminho inverso, combinando uma lista de sinais de 1 \textit{bit} (do mais ao menos significativo) em um único sinal de N \textit{bits}.
+\end{itemize}
+
+Em termos de fios, \texttt{BitSlice} corresponde a retirar um único fio de um barramento, e \texttt{Bus} a agrupar vários fios independentes em um novo barramento, como ilustra a Figura~\ref{fig:bitslice-bus}.
+
+\begin{figure}[H]
+\centering
+\caption{\texttt{BitSlice} retirando fios de um barramento e \texttt{Bus} agrupando fios em um barramento.}
+\label{fig:bitslice-bus}
+\begin{tikzpicture}[>={Latex[length=2.5mm]}]
+    % (a) BitSlice
+    \node[anchor=east] at (0,0) {\texttt{a}};
+    \draw[line width=1.6pt] (0.2,0) -- (1.6,0);
+    \draw (0.75,-0.25) -- (1.05,0.25);
+    \node[above] at (0.9,0.2) {\scriptsize 3};
+    \draw[line width=1.6pt] (1.6,-0.9) -- (1.6,0.9);
+    \foreach \y/\i in {0.75/0, 0/1, -0.75/2} {
+        \draw[->] (1.6,\y) -- (2.8,\y) node[right]{\scriptsize \texttt{BitSlice(a, \i)}};
+    }
+    \node at (2.4,-1.6) {\small (a) \texttt{BitSlice}};
+    % (b) Bus
+    \foreach \y/\i in {0.75/0, 0/1, -0.75/2} {
+        \node[anchor=east] at (7.6,\y) {\scriptsize \texttt{s\i}};
+        \draw (7.8,\y) -- (9,\y);
+    }
+    \draw[line width=1.6pt] (9,-0.9) -- (9,0.9);
+    \draw[->, line width=1.6pt] (9,0) -- (10.4,0);
+    \draw (9.55,-0.25) -- (9.85,0.25);
+    \node[above] at (9.7,0.2) {\scriptsize 3};
+    \node[right] at (10.4,0) {\scriptsize \texttt{Bus([s0, s1, s2])}};
+    \node at (9,-1.6) {\small (b) \texttt{Bus}};
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+Ambas seguem o mesmo contrato (\texttt{output}, \texttt{add\_listener}, \texttt{trigger\_change}) e são usadas internamente pelo \texttt{RippleCarryAdder}, descrito na Seção~\ref{sec:somador-portas}.
+
+\section{Portas Lógicas}
+\label{sec:portas}
+
+As portas lógicas (\texttt{Not}, \texttt{And}, \texttt{Or}, \texttt{Xor}, no pacote \texttt{gates}) seguem todas a mesma estrutura: recebem seus componentes de entrada no construtor, se registram como \textit{listeners} deles e calculam a saída \textit{bit} a \textit{bit}. O Algoritmo~\ref{alg:xor} apresenta, como exemplo, a porta \texttt{Xor}.
+
+\begin{algoritmo}[H]
+\caption{Porta Xor (gates/xor\_gate.py).}
+\label{alg:xor}
+\begin{minted}{python}
+class Xor:
+    def __init__(self, a, b):
+        self._a = a
+        self._b = b
+        self._output = None
+        self._listeners = []
+
+        self._a.add_listener(self.trigger_change)
+        self._b.add_listener(self.trigger_change)
+        self.trigger_change(None, None)
+
+    def trigger_change(self, old, new):
+        previous_output = self._output
+        new_value = [self._a.output[i] ^ self._b.output[i]
+                     for i in range(len(self._a.output))]
+        if new_value == previous_output:
+            return self._output
+        self._output = new_value
+        for listener in self._listeners:
+            listener(previous_output, new_value)
+        return self._output
+
+    @property
+    def output(self):
+        return self._output
+
+    def add_listener(self, listener):
+        self._listeners.append(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+As demais portas (\texttt{Not}, \texttt{And}, \texttt{Or}) diferem apenas na operação booleana aplicada a cada par de \textit{bits} das entradas (Linha 14 do Algoritmo~\ref{alg:xor}). Como cada porta se inscreve como \textit{listener} de suas entradas já no construtor (Linhas 8 e 9 do Algoritmo~\ref{alg:xor}), a saída de uma porta é recalculada automaticamente sempre que qualquer uma de suas entradas muda, sem que o código cliente precise chamar nenhum método explicitamente. A Figura~\ref{fig:xor-codigo} relaciona cada parte do símbolo da porta às linhas do Algoritmo~\ref{alg:xor} que a implementam.
+
+\begin{figure}[H]
+\centering
+\caption{Porta XOR anotada com as linhas do Algoritmo~\ref{alg:xor}.}
+\label{fig:xor-codigo}
+\begin{circuitikz}[>={Latex[length=2mm]}]
+\node[xor port] (x) at (0,0) {};
+\draw (x.in 1) -- ++(-1.4,0) node[left]{\texttt{a}};
+\draw (x.in 2) -- ++(-1.4,0) node[left]{\texttt{b}};
+\draw (x.out) -- ++(1.6,0) node[right]{\texttt{output}};
+\node[font=\scriptsize, align=left, anchor=east] (n1) at (-1.6,1.3) {L8--9: inscreve-se como\\\textit{listener} de \texttt{a} e \texttt{b}};
+\draw[dashed,->] (n1.east) -- ($(x.in 1)+(-0.8,0.05)$);
+\node[font=\scriptsize, align=center] (n2) at (0,-1.4) {L14--15: \texttt{a[i] \textasciicircum{} b[i]} para cada \textit{bit}; L16--17: para se nada mudou};
+\draw[dashed,->] (n2.north) -- (x.south);
+\node[font=\scriptsize, align=left, anchor=west] (n3) at (1.6,1.3) {L18: guarda a nova saída\\L19--20: notifica os \textit{listeners}};
+\draw[dashed,->] (n3.west) -- ($(x.out)+(0.8,0.05)$);
+\end{circuitikz}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+\section{Somador com Portas Lógicas}
+\label{sec:somador-portas}
+
+Esta é a forma recomendada de montar um somador no simulador: inteiramente a partir das portas lógicas básicas, sem nenhum atalho em Python. Um somador completo de 1 \textit{bit} é montado com dois meios-somadores mais uma porta OR para combinar os dois possíveis \textit{carries}, como mostra o Algoritmo~\ref{alg:fulladder}.
+
+\begin{algoritmo}[H]
+\caption{FullAdder (components/full\_adder.py).}
+\label{alg:fulladder}
+\begin{minted}{python}
+from gates.xor_gate import Xor
+from gates.and_gate import And
+from gates.or_gate import Or
+
+
+class FullAdder:
+    def __init__(self, a, b, carry_in):
+        xor_ab = Xor(a, b)
+        and_ab = And(a, b)
+        and_xor_carry = And(xor_ab, carry_in)
+
+        self.sum = Xor(xor_ab, carry_in)
+        self.carry_out = Or(and_ab, and_xor_carry)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+A Figura~\ref{fig:full-adder} mostra o mesmo circuito representado com os símbolos de portas lógicas apresentados na Seção~\ref{sec:circuitos-digitais}, evidenciando a correspondência direta entre o diagrama e o código: cada porta lógica do diagrama corresponde a uma instância de \texttt{Xor}, \texttt{And} ou \texttt{Or} no construtor de \texttt{FullAdder}, e está anotada com a linha do Algoritmo~\ref{alg:fulladder} que a cria.
+
+\begin{figure}[H]
+\centering
+\caption{Somador completo (\textit{full adder}) montado com portas lógicas, com a linha do Algoritmo~\ref{alg:fulladder} correspondente a cada porta.}
+\label{fig:full-adder}
+\begin{circuitikz}[scale=0.9, every node/.style={transform shape}]
+\node[xor port] (x1) at (2.4,0) {};
+\node[and port] (a1) at (2.4,-3.2) {};
+\node[xor port, anchor=in 1] (x2) at (5.6,0) {};
+\node[and port, anchor=in 1] (a2) at (5.6,-1.6) {};
+\node[or port] (o1) at (10.6,-2.4) {};
+
+% entradas A e B
+\draw (-0.4,0 |- x1.in 1) node[left]{$A$} -- (x1.in 1);
+\draw (-0.4,0 |- x1.in 2) node[left]{$B$} -- (x1.in 2);
+\draw (0.6,0 |- x1.in 1) node[circ]{} |- (a1.in 1);
+\draw (0.1,0 |- x1.in 2) node[circ]{} |- (a1.in 2);
+
+% Cin
+\draw (-0.4,0 |- a2.in 2) node[left]{$C_{in}$} -- (4.9,0 |- a2.in 2) node[circ]{} -- (a2.in 2);
+\draw (4.9,0 |- a2.in 2) |- (x2.in 2);
+
+% saída de xor_ab alimenta xor2 e and2
+\draw (x1.out) -- (x2.in 1);
+\draw (4.4,0 |- x1.out) node[circ]{} |- (a2.in 1);
+
+% carries para a porta OR
+\draw (a2.out) -| (9.0,0 |- o1.in 1) -- (o1.in 1);
+\draw (a1.out) -| (9.0,0 |- o1.in 2) -- (o1.in 2);
+
+% saídas
+\draw (x2.out) -- ++(1.2,0) node[right]{Soma};
+\draw (o1.out) -- ++(0.6,0) node[right]{\textit{Carry-out}};
+
+% linhas do código
+\node[font=\scriptsize, above=2mm] at (x1.north) {L8: \texttt{xor\_ab}};
+\node[font=\scriptsize, below=2mm] at (a1.south) {L9: \texttt{and\_ab}};
+\node[font=\scriptsize, above=2mm] at (x2.north) {L12: \texttt{self.sum}};
+\node[font=\scriptsize, below=1mm] at (a2.south) {L10: \texttt{and\_xor\_carry}};
+\node[font=\scriptsize, below=2mm] at (o1.south) {L13: \texttt{self.carry\_out}};
+\end{circuitikz}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+\texttt{FullAdder} expõe \texttt{.sum} e \texttt{.carry\_out} como saídas de portas lógicas comuns (Linhas 12 e 13 do Algoritmo~\ref{alg:fulladder}), prontas para servir de entrada a outro componente. O \texttt{RippleCarryAdder}, apresentado no Algoritmo~\ref{alg:rca}, encadeia N instâncias de \texttt{FullAdder}, uma por \textit{bit}, do menos significativo ao mais significativo, usando \texttt{BitSlice} para extrair cada \textit{bit} dos barramentos de entrada e um \texttt{Bus} para recompor os N \textit{bits} de soma em um único sinal.
+
+\begin{algoritmo}[H]
+\caption{RippleCarryAdder (components/ripple\_carry\_adder.py).}
+\label{alg:rca}
+\begin{minted}{python}
+class RippleCarryAdder:
+    def __init__(self, a, b, carry_in=None):
+        width = len(a.output)
+        carry = carry_in if carry_in is not None else BitArray([False])
+
+        sum_bits = [None] * width
+        self.full_adders = []
+        for i in range(width - 1, -1, -1):
+            bit_a = BitSlice(a, i)
+            bit_b = BitSlice(b, i)
+            full_adder = FullAdder(bit_a, bit_b, carry)
+            self.full_adders.append(full_adder)
+            sum_bits[i] = full_adder.sum
+            carry = full_adder.carry_out
+
+        self.sum = Bus(sum_bits)
+        self.carry_out = carry
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+A Figura~\ref{fig:rca} mostra a estrutura resultante para N = 3, anotada com as linhas do código: o laço das Linhas 8 a 14 do Algoritmo~\ref{alg:rca} percorre os \textit{bits} do menos significativo (índice 2, à direita) ao mais significativo (índice 0, à esquerda), e a variável \texttt{carry} (Linha 14) conecta o \textit{carry-out} de cada \texttt{FullAdder} ao \textit{carry-in} do seguinte. A lista \texttt{full\_adders} (Linhas 7 e 12) não participa da soma: ela apenas guarda os estágios criados, para que possam ser inspecionados depois da construção (Seção~\ref{sec:observacao}).
+
+\begin{figure}[H]
+\centering
+\caption{\texttt{RippleCarryAdder} de 3 \textit{bits} formado pelo encadeamento de três \texttt{FullAdder}, com as linhas do Algoritmo~\ref{alg:rca}.}
+\label{fig:rca}
+\begin{tikzpicture}[
+    fa/.style={draw, rectangle, minimum width=2.4cm, minimum height=1.4cm, align=center},
+    >={Latex[length=2.5mm]}
+]
+    \foreach \i/\x in {0/0, 1/4, 2/8} {
+        \node[fa] (fa\i) at (\x,0) {\texttt{FullAdder}\\\scriptsize L11, $i = \i$};
+        \draw[<-] ($(fa\i.north)+(-0.5,0)$) -- ++(0,1) node[above]{\scriptsize \texttt{a[\i]}};
+        \draw[<-] ($(fa\i.north)+(0.5,0)$) -- ++(0,1) node[above]{\scriptsize \texttt{b[\i]}};
+        \draw[->] (fa\i.south) -- ++(0,-0.4);
+    }
+    \node[font=\scriptsize] at (4,2.6) {L9--10: \texttt{BitSlice} extrai \texttt{a[i]} e \texttt{b[i]}};
+    \node[draw, minimum width=10.4cm, minimum height=0.6cm, font=\scriptsize] (bus) at (4,-1.4) {L13: \texttt{sum\_bits[i]} \quad L16: \texttt{Bus(sum\_bits)} $\rightarrow$ \texttt{self.sum}};
+    \draw[<-] (fa2.east) -- ++(0.8,0) node[right, align=left]{\scriptsize \texttt{carry\_in}\\\scriptsize $= 0$ (L4)};
+    \draw[->] (fa2.west) -- node[above]{\scriptsize L14} (fa1.east);
+    \draw[->] (fa1.west) -- node[above]{\scriptsize L14} (fa0.east);
+    \draw[->] (fa0.west) -- ++(-0.8,0) node[left, align=right]{\scriptsize \texttt{carry\_out}\\\scriptsize (L17)};
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+Um ponto central deste trabalho é que, aqui, o \textit{overflow} não é tratado por nenhuma função de \textit{padding} ou truncamento: ele surge naturalmente da topologia do circuito. A soma só tem $N$ fios de saída, um por estágio de \texttt{FullAdder}, e o ``vai-um'' do último estágio vira um sinal \texttt{carry\_out} separado. Quando esse sinal não é conectado a mais nada, a informação do estouro se perde e a soma ``dá a volta'' sozinha, exatamente como aconteceria em um contador de \textit{hardware} real. Esse comportamento é validado e discutido em detalhe na Seção~\ref{sec:contador-portas}.
+
+\section{\texttt{BehavioralAdder}: um Somador Comportamental em Python}
+\label{sec:behavioral-adder}
+
+O pacote \texttt{components} também inclui o \texttt{BehavioralAdder}, apresentado no Algoritmo~\ref{alg:behavioraladder}, que soma dois \texttt{BitArray} sem montar nenhuma porta lógica: ele segue o mesmo contrato reativo das portas, mas, em vez de uma operação booleana, delega o cálculo da saída (Linha 14) à função \texttt{sum\_via\_integer\_conversion}.
+
+\begin{algoritmo}[H]
+\caption{BehavioralAdder (components/behavioral\_adder.py).}
+\label{alg:behavioraladder}
+\begin{minted}{python}
+class BehavioralAdder:
+    def __init__(self, a, b):
+        self._a = a
+        self._b = b
+        self._output = None
+        self._listeners = []
+
+        self._a.add_listener(self.trigger_change)
+        self._b.add_listener(self.trigger_change)
+        self.trigger_change(None, None)
+
+    def trigger_change(self, old, new):
+        previous_output = self._output
+        new_value = sum_via_integer_conversion(self._a.output, self._b.output)
+        if new_value == previous_output:
+            return self._output
+        self._output = new_value
+        for listener in self._listeners:
+            listener(previous_output, new_value)
+        return self._output
+
+    @property
+    def output(self):
+        return self._output
+
+    def add_listener(self, listener):
+        self._listeners.append(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+As funções auxiliares usadas pelo \texttt{BehavioralAdder} estão no módulo \texttt{utils/binary\_conversion.py}, apresentado no Algoritmo~\ref{alg:binconv}: \texttt{sum\_via\_integer\_conversion} (Linhas 1--6) converte as duas entradas para inteiro com \texttt{binary\_array\_to\_int} (Linhas 9--11), soma os inteiros em Python, converte o resultado de volta para uma lista de \textit{bits} com \texttt{int\_to\_binary\_array} (Linhas 14--16) e, por fim, ajusta essa lista ao tamanho da entrada com \texttt{pad\_binary\_array} (Linhas 19--24).
+
+\begin{algoritmo}[H]
+\caption{Funções auxiliares de conversão e \textit{padding} binário (utils/binary\_conversion.py).}
+\label{alg:binconv}
+\begin{minted}{python}
+def sum_via_integer_conversion(a, b):
+    a_int = binary_array_to_int(a)
+    b_int = binary_array_to_int(b)
+    sum_int = a_int + b_int
+    sum_array = int_to_binary_array(sum_int)
+    return pad_binary_array(sum_array, len(a))
+
+
+def binary_array_to_int(binary_array):
+    bits_as_str = "".join("1" if bit else "0" for bit in binary_array)
+    return int(bits_as_str, 2)
+
+
+def int_to_binary_array(value):
+    binary_str = bin(value)[2:]
+    return [bit == "1" for bit in binary_str]
+
+
+def pad_binary_array(binary_array, length):
+    if len(binary_array) < length:
+        return [False] * (length - len(binary_array)) + binary_array
+    if len(binary_array) > length:
+        return binary_array[-length:]
+    return binary_array[:]
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+Como o nome indica, trata-se de uma \textbf{descrição comportamental} do somador, no mesmo sentido usado nas HDLs (Seção~\ref{sec:hdls}): o componente descreve o que o somador faz, e não de quais portas ele é feito, como ocorre na descrição estrutural do \texttt{RippleCarryAdder}. Não se trata, portanto, de uma tentativa imperfeita de somador digital, e sim de uma abstração deliberada: um recurso do simulador que demonstra a possibilidade de \textbf{misturar um trecho de Python ``puro'' com o restante do circuito reativo}. Isso é útil quando o objetivo de um teste ou demonstração é outra parte do circuito, por exemplo, o comportamento do registrador e da realimentação de um contador, e não a aritmética em si. Nesses casos, o \texttt{BehavioralAdder} permite ao estudante montar rapidamente um circuito funcional sem precisar implementar previamente um somador com portas lógicas, substituindo-o pelo \texttt{RippleCarryAdder} (Seção~\ref{sec:somador-portas}) somente quando o próprio somador for o objeto de estudo.
+
+A Figura~\ref{fig:behavioral-adder} representa o \texttt{BehavioralAdder} como um bloco: externamente, ele tem as mesmas entradas e a mesma saída de um somador de portas lógicas; internamente, em vez de portas interligadas (como na Figura~\ref{fig:rca}), há apenas uma sequência de operações em Python, cada uma anotada com as linhas dos Algoritmos~\ref{alg:behavioraladder} e~\ref{alg:binconv} que a implementam.
+
+\begin{figure}[H]
+\centering
+\caption{\texttt{BehavioralAdder} como bloco comportamental, com as linhas dos Algoritmos~\ref{alg:behavioraladder} e~\ref{alg:binconv}.}
+\label{fig:behavioral-adder}
+\begin{tikzpicture}[
+    etapa/.style={draw, rounded corners, font=\scriptsize, align=center, minimum height=0.9cm},
+    >={Latex[length=2.5mm]}, scale=0.85, every node/.style={transform shape}
+]
+    \node[etapa] (s1) at (0,0) {\texttt{binary\_array\_to\_int}\\de \texttt{a} e de \texttt{b}};
+    \node[etapa] (s2) at (3.6,0) {soma de\\inteiros};
+    \node[etapa] (s3) at (7.0,0) {\texttt{int\_to\_binary\_array}};
+    \node[etapa] (s4) at (11.0,0) {\texttt{pad\_binary\_array}};
+    \draw[->] (s1) -- (s2);
+    \draw[->] (s2) -- (s3);
+    \draw[->] (s3) -- (s4);
+    \node[font=\scriptsize, below=1mm of s1] {Alg.~\ref{alg:binconv}, L2--3, L9--11};
+    \node[font=\scriptsize, below=1mm of s2] {Alg.~\ref{alg:binconv}, L4};
+    \node[font=\scriptsize, below=1mm of s3] {Alg.~\ref{alg:binconv}, L5, L14--16};
+    \node[font=\scriptsize, below=1mm of s4] {Alg.~\ref{alg:binconv}, L6, L19--24};
+    \node[draw, thick, fit=(s1) (s4), inner xsep=0.4cm, inner ysep=0.75cm, yshift=-0.15cm] (box) {};
+    \node[font=\small, anchor=south] at (box.north) {\texttt{BehavioralAdder}: L14 chama \texttt{sum\_via\_integer\_conversion}};
+    \draw[<-] ($(box.west)+(0,0.3)$) -- ++(-1,0) node[left]{\texttt{a}};
+    \draw[<-] ($(box.west)+(0,-0.3)$) -- ++(-1,0) node[left]{\texttt{b}};
+    \draw[->] (box.east) -- ++(1,0) node[right]{\texttt{output}};
+    \node[font=\scriptsize, align=center, anchor=north] at ($(box.south west)+(0.9,-0.1)$) {L8--9: inscreve-se\\em \texttt{a} e \texttt{b}};
+    \node[font=\scriptsize, align=center, anchor=north] at ($(box.south east)+(-0.9,-0.1)$) {L17--19: guarda\\e notifica};
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+A função \texttt{pad\_binary\_array} merece destaque: ela garante que o resultado da soma tenha exatamente o mesmo número de \textit{bits} da entrada original, preenchendo com zeros à esquerda quando o resultado é menor (Linhas 20 e 21 do Algoritmo~\ref{alg:binconv}), e \textbf{truncando os \textit{bits} mais significativos} quando o resultado excede esse tamanho (Linhas 22 e 23), o que reproduz o \textit{overflow} apenas dentro da descrição comportamental do \texttt{BehavioralAdder}. É importante notar que essa função é usada exclusivamente por \texttt{sum\_via\_integer\_conversion}: quando o somador é montado com portas lógicas (\texttt{RippleCarryAdder}), como discutido na Seção~\ref{sec:somador-portas}, o \textit{overflow} é tratado de forma completamente diferente, pelo sinal \texttt{carry\_out}, e \texttt{pad\_binary\_array} não entra em jogo.
+
+O truncamento das Linhas 22 e 23 não existia na primeira versão da função, que apenas preenchia o resultado com zeros à esquerda. Ao executar o contador de 3 \textit{bits} com \texttt{BehavioralAdder} além do valor \texttt{111}, o oitavo pulso de \textit{clock} produzia \texttt{[True, False, False, False]}: em vez de voltar a \texttt{000}, como um contador real, o contador crescia em largura. O episódio ilustra que a propagação automática de valores garante que os componentes sejam recalculados na ordem correta, mas não que cada componente reproduza fielmente o comportamento do \textit{hardware}; essa fidelidade precisa ser verificada componente a componente, sobretudo nas descrições comportamentais, em que a lógica é escrita livremente em Python.
+
+\section{Componente Sequencial: \texttt{BehavioralRegister}}
+\label{sec:register}
+
+O \texttt{BehavioralRegister} é o componente do simulador com comportamento sensível a borda de \textit{clock} mais simples de usar, e é o que dá início aos circuitos sequenciais: qualquer circuito com estado (contador, \textit{flip-flop}) depende de um registrador para ``lembrar'' um valor entre pulsos de \textit{clock}. É importante ser explícito sobre sua natureza, que o próprio nome indica, assim como no \texttt{BehavioralAdder}: o \texttt{BehavioralRegister} é uma \textbf{descrição comportamental em lógica Python}, não um circuito montado a partir de portas lógicas; sua contraparte estrutural é o \texttt{DFlipFlopRegister} (Seção~\ref{sec:dflipflop-register}). Ele não modela o funcionamento interno de um \textit{flip-flop} real (não há \textit{latches}, não há a estrutura mestre-escravo discutida na Seção~\ref{sec:latches}); ele apenas verifica, em Python, se o \textit{clock} transicionou de falso para verdadeiro e, em caso afirmativo, lê diretamente o valor atual de sua entrada. Ele recebe um sinal \texttt{clock}, um componente \texttt{data\_in} (o dado a ser capturado) e, opcionalmente, um componente \texttt{feedback\_target} a ser notificado quando o registrador atualizar seu valor, como mostra o Algoritmo~\ref{alg:register}.
+
+\begin{algoritmo}[H]
+\caption{Classe BehavioralRegister (components/behavioral\_register.py).}
+\label{alg:register}
+\begin{minted}{python}
+def _is_high(value):
+    if isinstance(value, list):
+        return bool(value) and bool(value[0])
+    return bool(value)
+
+
+class BehavioralRegister:
+    def __init__(self, clock, data_in, feedback_target=None):
+        self._clock = clock
+        self._data_in = data_in
+        self._output = None
+        self._listeners = []
+
+        self._clock.add_listener(self.trigger_change)
+        if feedback_target is not None:
+            self.add_listener(feedback_target.trigger_change)
+
+    def trigger_change(self, old, new):
+        previous_output = self._output
+        if not _is_high(old) and _is_high(new):
+            self._output = self._data_in.output
+            for listener in self._listeners:
+                listener(previous_output, self._output)
+        return self._output
+
+    @property
+    def output(self):
+        return self._output
+
+    def add_listener(self, listener):
+        self._listeners.append(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+O condicional da Linha 20 do Algoritmo~\ref{alg:register} é o que implementa a detecção de borda de subida: o valor de \texttt{data\_in.output} só é capturado quando \texttt{clock.output} muda de falso para verdadeiro. A função auxiliar \texttt{\_is\_high} (Linhas 1--4) existe porque o \textit{clock} pode ser representado tanto por um booleano (\texttt{BitArray(False)}) quanto por uma lista de um único \textit{bit} (\texttt{BitArray([False])}), forma exigida quando o mesmo sinal também alimenta portas lógicas (Seção~\ref{sec:contador-registrador-real}). Em Python, qualquer lista não vazia é considerada verdadeira, inclusive \texttt{[False]}; uma versão anterior deste componente testava apenas a ``veracidade'' do novo valor e, com um \textit{clock} em forma de lista, capturava o dado também na borda de descida. Esse defeito foi identificado durante a revisão do trabalho e passou a ser coberto por um teste automatizado (Seção~\ref{sec:testes}). Para gerar um pulso de \textit{clock}, é necessário alternar explicitamente o valor do \textit{clock} entre falso e verdadeiro (\texttt{clock.output = False} seguido de \texttt{clock.output = True}); atribuir verdadeiro repetidamente, sem antes voltar a falso, não gera uma nova borda e, portanto, não atualiza o registrador.
+
+O parâmetro opcional \texttt{feedback\_target} (Linhas 15 e 16) é o que permite fechar um laço de realimentação: ao passar o próprio sinal de entrada de um circuito como \texttt{feedback\_target} do registrador, o valor atualizado do registrador é propagado de volta para esse sinal, fazendo com que o circuito combinacional ligado a ele seja recalculado antes do próximo pulso de \textit{clock}. Esse mecanismo é a base dos circuitos com estado apresentados a seguir. A Figura~\ref{fig:behavioral-register} representa o \texttt{BehavioralRegister} com o símbolo usual de um registrador e indica as linhas do Algoritmo~\ref{alg:register} responsáveis por cada parte; no lugar dos \textit{latches} internos de um registrador real (Seção~\ref{sec:latches}), há apenas um condicional em Python.
+
+\begin{figure}[H]
+\centering
+\caption{\texttt{BehavioralRegister} representado como registrador, com as linhas do Algoritmo~\ref{alg:register}.}
+\label{fig:behavioral-register}
+\begin{tikzpicture}[>={Latex[length=2.5mm]}]
+    \node[draw, thick, minimum width=4.6cm, minimum height=2.4cm, align=left, font=\scriptsize] (r) at (0,0) {L20: o \textit{clock} passou de 0 para 1?\\L21: se sim, copia \texttt{data\_in.output}\\(lógica Python, sem portas internas)};
+    \node[font=\small, anchor=south] at (r.north) {\texttt{BehavioralRegister}};
+    \draw ($(r.south west)+(0,0.25)$) -- ++(0.25,0.2) -- ++(-0.25,0.2);
+    \draw[<-] ($(r.west)+(0,0.6)$) -- ++(-1.6,0) node[left]{\texttt{data\_in}};
+    \draw[<-] ($(r.south west)+(0,0.45)$) -- ++(-1.6,0) node[left]{\texttt{clock}} node[pos=0.5, below, font=\scriptsize]{L14};
+    \draw[->] (r.east) -- ++(3.2,0) node[right]{\texttt{output}} node[pos=0.5, above, font=\scriptsize]{L22--23: notifica};
+    \node[font=\scriptsize, anchor=west] (fb) at ($(r.east)+(2.0,-1.6)$) {\texttt{feedback\_target} (L15--16)};
+    \draw[->, dashed] ($(r.east)+(1.0,0)$) node[circle, fill, inner sep=1pt]{} |- (fb.west);
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+\section{Registrador Real com \textit{Latches}}
+\label{sec:latches}
+
+Como discutido na Seção~\ref{sec:register}, o \texttt{BehavioralRegister} é uma abstração. Para complementá-lo com uma implementação que reproduz de fato a estrutura interna de um \textit{flip-flop}, o pacote \texttt{components} também inclui um registrador construído inteiramente a partir de portas lógicas, em três camadas: um \textbf{\textit{latch} SR}, um \textbf{\textit{latch} D} e um \textbf{\textit{flip-flop} D mestre-escravo}.
+
+\subsection{\textit{Latch} SR}
+
+O \textit{latch} SR é o elemento de memória mais simples: duas portas NOR cruzadas, em que a saída de cada uma alimenta a entrada da outra. Essa realimentação combinacional genuína (a saída $Q$ depende de $\overline{Q}$, que depende de $Q$) não pode ser expressa com a ordem de construção usual dos demais componentes deste trabalho, em que cada objeto recebe suas entradas já prontas no construtor: aqui, no momento em que a primeira porta NOR precisa ser criada, a segunda ainda não existe. A solução adotada, apresentada no Algoritmo~\ref{alg:srlatch}, usa um \texttt{BitArray} comum como sinal provisório (um ``proxy''), montado antes das duas portas NOR (Linha 7) e sincronizado ao valor real assim que ambas existem (Linhas 12 e 13).
+
+\begin{algoritmo}[H]
+\caption{SRLatch (components/sr\_latch.py).}
+\label{alg:srlatch}
+\begin{minted}{python}
+from signals.bit_array import BitArray
+from gates.nor_gate import Nor
+
+
+class SRLatch:
+    def __init__(self, s, r):
+        q_not_proxy = BitArray([False])
+
+        self.q = Nor(r, q_not_proxy)
+        self.q_not = Nor(s, self.q)
+
+        self.q_not.add_listener(q_not_proxy.trigger_change)
+        q_not_proxy.output = self.q_not.output
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+A Figura~\ref{fig:srlatch} mostra o mesmo circuito com o símbolo das duas portas NOR: a porta superior corresponde à Linha 9 do Algoritmo~\ref{alg:srlatch}, a inferior à Linha 10, e o fio de realimentação de $\overline{Q}$ para a porta superior passa pelo \textit{proxy} criado na Linha 7 e sincronizado nas Linhas 12 e 13.
+
+\begin{figure}[H]
+\centering
+\caption{\textit{Latch} SR de portas NOR cruzadas, com as linhas do Algoritmo~\ref{alg:srlatch}.}
+\label{fig:srlatch}
+\begin{circuitikz}
+\node[nor port] (n1) at (3,1.6) {};
+\node[nor port] (n2) at (3,-1.6) {};
+\draw (n1.in 1) -- ++(-1.8,0) node[left]{$R$ (\texttt{r})};
+\draw (n2.in 2) -- ++(-1.8,0) node[left]{$S$ (\texttt{s})};
+\draw (n1.out) -- ++(1.8,0) node[right]{$Q$ (\texttt{self.q})};
+\draw (n2.out) -- ++(1.8,0) node[right]{$\overline{Q}$ (\texttt{self.q\_not})};
+\coordinate (qtap) at ($(n1.out)+(0.5,0)$);
+\coordinate (qntap) at ($(n2.out)+(1.0,0)$);
+\coordinate (qleft) at ($(n2.in 1)+(-0.4,0)$);
+\coordinate (qnleft) at ($(n1.in 2)+(-0.8,0)$);
+\draw (qtap) node[circ]{} |- (qleft |- 0,-0.5) |- (n2.in 1);
+\draw (qntap) node[circ]{} |- (qnleft |- 0,0.5) |- (n1.in 2);
+\node[draw, fill=white, font=\scriptsize] at (3,0.5) {\texttt{q\_not\_proxy} (L7)};
+\node[font=\scriptsize, above=1mm] at (n1.north) {L9: \texttt{Nor(r, q\_not\_proxy)}};
+\node[font=\scriptsize, below=1mm] at (n2.south) {L10: \texttt{Nor(s, self.q)}};
+\node[font=\scriptsize, align=left, anchor=west] at ($(qntap)+(0.15,1.3)$) {L12--13: $\overline{Q}$\\atualiza o \textit{proxy}};
+\end{circuitikz}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+Esse laço de realimentação só funciona porque as portas lógicas do simulador (Seção~\ref{sec:portas}) foram ajustadas para notificar seus \textit{listeners} apenas quando o valor calculado realmente muda; sem essa condição, a notificação de uma mudança em $Q$ dispararia uma nova notificação em $\overline{Q}$, que dispararia outra em $Q$, indefinidamente. A Seção~\ref{sec:contador-portas-real} discute o que acontece quando essa condição de parada, sozinha, não é suficiente.
+
+\subsection{\textit{Latch} D e \textit{Flip-Flop} D Mestre-Escravo}
+
+Um \textit{latch} D elimina a combinação inválida do \textit{latch} SR ($S = R = 1$) derivando $S$ e $R$ de um único sinal de dado $D$ e de um sinal de habilitação (\textit{enable}): $S = D \land \mathit{enable}$ e $R = \overline{D} \land \mathit{enable}$, de modo que $S$ e $R$ nunca são verdadeiros ao mesmo tempo. Enquanto \textit{enable} está em nível alto, o \textit{latch} é transparente e acompanha $D$; quando \textit{enable} cai, ele retém o último valor observado. O Algoritmo~\ref{alg:dlatch} implementa essas expressões nas Linhas 8 a 10.
+
+\begin{algoritmo}[H]
+\caption{DLatch (components/d\_latch.py).}
+\label{alg:dlatch}
+\begin{minted}{python}
+from gates.and_gate import And
+from gates.not_gate import Not
+from components.sr_latch import SRLatch
+
+
+class DLatch:
+    def __init__(self, d, enable):
+        not_d = Not(d)
+        s = And(d, enable)
+        r = And(not_d, enable)
+
+        self._sr_latch = SRLatch(s, r)
+
+    @property
+    def output(self):
+        return self._sr_latch.output
+
+    def add_listener(self, listener):
+        self._sr_latch.add_listener(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+A Figura~\ref{fig:dlatch} mostra a estrutura correspondente: a porta NOT e as duas portas AND, criadas nas Linhas 8 a 10 do Algoritmo~\ref{alg:dlatch}, geram $S$ e $R$, que alimentam o \textit{latch} SR criado na Linha 12.
+
+\begin{figure}[H]
+\centering
+\caption{\textit{Latch} D montado sobre um \textit{latch} SR, com as linhas do Algoritmo~\ref{alg:dlatch}.}
+\label{fig:dlatch}
+\begin{circuitikz}
+\node[and port] (as) at (3.4,1.1) {};
+\node[and port] (ar) at (3.4,-1.1) {};
+\node[not port, anchor=out] (nd) at ($(ar.in 1)+(-0.5,0)$) {};
+\draw (nd.out) -- (ar.in 1);
+\draw (-0.6,0 |- as.in 1) node[left]{$D$ (\texttt{d})} -- (as.in 1);
+\draw (0.0,0 |- as.in 1) node[circ]{} |- (nd.in);
+\draw (-0.6,0) node[left]{\textit{enable}} -- (1.9,0) node[circ]{};
+\draw (1.9,0) |- (as.in 2);
+\draw (1.9,0) |- (ar.in 2);
+\node[draw, minimum width=1.9cm, minimum height=3.0cm, align=center] (sr) at (6.6,0) {\texttt{SRLatch}\\(L12)};
+\draw (as.out) -- (sr.west |- as.out) node[right, font=\scriptsize]{$S$};
+\draw (ar.out) -- (sr.west |- ar.out) node[right, font=\scriptsize]{$R$};
+\draw (sr.east) -- ++(1,0) node[right]{$Q$};
+\node[font=\scriptsize, above=1mm] at (as.north) {L9: \texttt{s = And(d, enable)}};
+\node[font=\scriptsize, below=1mm, anchor=north west] at ($(ar.south)+(-0.4,0)$) {L10: \texttt{r = And(not\_d, enable)}};
+\node[font=\scriptsize, below=1mm, anchor=north east] at ($(nd.south)+(0.3,0)$) {L8: \texttt{not\_d}};
+\end{circuitikz}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+O \texttt{DFlipFlop}, apresentado no Algoritmo~\ref{alg:dflipflop}, encadeia dois \textit{latches} D em uma estrutura mestre-escravo clássica: o \textit{latch} mestre fica transparente enquanto o \textit{clock} está em nível baixo (\textit{enable} $= \overline{\mathit{clock}}$, Linha 9), acompanhando $D$; o \textit{latch} escravo fica transparente enquanto o \textit{clock} está em nível alto (\textit{enable} $= \mathit{clock}$, Linha 10), repassando o valor já congelado pelo mestre. O efeito resultante é que a saída só muda no instante da borda de subida do \textit{clock}, reproduzindo o mesmo comportamento observável do \texttt{BehavioralRegister}, mas a partir de portas lógicas reais.
+
+\begin{algoritmo}[H]
+\caption{DFlipFlop (components/d\_flip\_flop.py).}
+\label{alg:dflipflop}
+\begin{minted}{python}
+from gates.not_gate import Not
+from components.d_latch import DLatch
+
+
+class DFlipFlop:
+    def __init__(self, d, clock, feedback_target=None):
+        not_clock = Not(clock)
+
+        self._master = DLatch(d, not_clock)
+        self._slave = DLatch(self._master, clock)
+
+        if feedback_target is not None:
+            self._slave.add_listener(feedback_target.trigger_change)
+            feedback_target.trigger_change(feedback_target.output, self._slave.output)
+
+    @property
+    def output(self):
+        return self._slave.output
+
+    def add_listener(self, listener):
+        self._slave.add_listener(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+A sincronização explícita de \texttt{feedback\_target} nas Linhas 12 a 14 do Algoritmo~\ref{alg:dflipflop} existe pelo mesmo motivo que a do \texttt{SRLatch}: o estado interno do \textit{flip-flop} já se estabiliza durante a própria construção (antes de qualquer pulso de \textit{clock}), e sem essa sincronização um sinal de realimentação externo nunca tomaria conhecimento desse valor inicial. Essa validação, incluindo o caso do \texttt{DFlipFlop} realimentado através de si mesmo para formar um \textit{flip-flop} \textit{toggle} (Seção~\ref{sec:composicao}), é apresentada na Seção~\ref{sec:contador-portas-real}. A Figura~\ref{fig:dflipflop} mostra a estrutura mestre-escravo com as linhas correspondentes do Algoritmo~\ref{alg:dflipflop}.
+
+\begin{figure}[H]
+\centering
+\caption{\textit{Flip-flop} D mestre-escravo, com as linhas do Algoritmo~\ref{alg:dflipflop}.}
+\label{fig:dflipflop}
+\begin{circuitikz}[>={Latex[length=2.5mm]}]
+\node[draw, minimum width=2.6cm, minimum height=1.6cm, align=center] (m) at (3,0) {\texttt{DLatch}\\mestre (L9)};
+\node[draw, minimum width=2.6cm, minimum height=1.6cm, align=center] (s) at (8.0,0) {\texttt{DLatch}\\escravo (L10)};
+\draw (-0.4,0) node[left]{$D$ (\texttt{d})} -- (m.west);
+\draw (m.east) -- (s.west) node[pos=0.5, above, font=\scriptsize]{\texttt{self.\_master}};
+\draw (s.east) -- ++(1.4,0) node[right]{$Q$};
+\node[not port, rotate=90] (nc) at (3,-1.75) {};
+\draw (nc.out) -- (m.south) node[pos=0.5, right, font=\scriptsize]{\textit{enable}};
+\draw (-0.4,-2.9) node[left]{\texttt{clock}} -- (8.0,-2.9);
+\draw (3,-2.9) node[circ]{} -- (nc.in);
+\draw (8.0,-2.9) -- (s.south) node[pos=0.5, left, font=\scriptsize]{\textit{enable}};
+\node[font=\scriptsize, anchor=east] at ($(nc.center)+(-0.45,0)$) {L7: \texttt{not\_clock}};
+\node[font=\scriptsize, anchor=west, align=left] (fb) at ($(s.east)+(1.1,-1.4)$) {\texttt{feedback\_target}\\(L12--14)};
+\draw[->, dashed] ($(s.east)+(0.7,0)$) node[circle, fill, inner sep=1pt]{} |- (fb.west);
+\end{circuitikz}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+\subsection{\texttt{DFlipFlopRegister}: um Registrador de N \textit{Bits} Real}
+\label{sec:dflipflop-register}
+
+O \texttt{DFlipFlop} apresentado acima opera sobre um único \textit{bit}. Para obter uma contraparte do \texttt{BehavioralRegister} (Seção~\ref{sec:register}) que seja, de fato, montada com portas lógicas em um contador de N \textit{bits}, o pacote \texttt{components} inclui o \texttt{DFlipFlopRegister}, apresentado no Algoritmo~\ref{alg:dffregister}: N instâncias de \texttt{DFlipFlop}, uma por posição de \textit{bit} de \texttt{data\_in}, todas compartilhando o mesmo sinal de \texttt{clock} e recombinadas em um único sinal de N \textit{bits}. A técnica de composição é a mesma já usada pelo \texttt{RippleCarryAdder} (Seção~\ref{sec:somador-portas}): \texttt{BitSlice} projeta cada \textit{bit} individualmente (Linha 9) e \texttt{Bus} os recombina (Linha 10).
+
+\begin{algoritmo}[H]
+\caption{DFlipFlopRegister (components/d\_flip\_flop\_register.py).}
+\label{alg:dffregister}
+\begin{minted}{python}
+from signals.bit_slice import BitSlice
+from signals.bus import Bus
+from components.d_flip_flop import DFlipFlop
+
+
+class DFlipFlopRegister:
+    def __init__(self, clock, data_in, feedback_target=None):
+        width = len(data_in.output)
+        self._bits = [DFlipFlop(BitSlice(data_in, i), clock) for i in range(width)]
+        self._output_bus = Bus(self._bits)
+
+        if feedback_target is not None:
+            self._output_bus.add_listener(feedback_target.trigger_change)
+            feedback_target.trigger_change(feedback_target.output, self._output_bus.output)
+
+    @property
+    def output(self):
+        return self._output_bus.output
+
+    def add_listener(self, listener):
+        self._output_bus.add_listener(listener)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{algoritmo}
+
+A Figura~\ref{fig:dffregister} mostra essa composição para N = 3: cada \textit{flip-flop} recebe um \textit{bit} de \texttt{data\_in} por meio de um \texttt{BitSlice} e o mesmo sinal de \textit{clock} (Linha 9 do Algoritmo~\ref{alg:dffregister}), e o \texttt{Bus} criado na Linha 10 reúne as três saídas.
+
+\begin{figure}[H]
+\centering
+\caption{\texttt{DFlipFlopRegister} de 3 \textit{bits}, com as linhas do Algoritmo~\ref{alg:dffregister}.}
+\label{fig:dffregister}
+\begin{tikzpicture}[>={Latex[length=2.5mm]}]
+    \foreach \i/\y in {0/1.7, 1/0, 2/-1.7} {
+        \node[draw, minimum width=2.2cm, minimum height=1.1cm] (ff\i) at (4.7,\y) {\texttt{DFlipFlop}};
+        \draw[->] (0.6,\y+0.25) -- ($(ff\i.west)+(0,0.25)$) node[pos=0.42, above, font=\scriptsize]{\texttt{BitSlice(\i)}};
+        \draw[->] (2.75,\y-0.3) -- ($(ff\i.west)+(0,-0.3)$);
+        \draw ($(ff\i.west)+(0,-0.45)$) -- ++(0.18,0.15) -- ++(-0.18,0.15);
+        \draw[->] (ff\i.east) -- (7.1,\y);
+    }
+    \draw[line width=1.6pt] (0.6,-1.6) -- (0.6,2.1);
+    \draw[line width=1.6pt] (-0.6,0) node[left]{\texttt{data\_in}} -- (0.6,0);
+    \draw (-0.15,-0.25) -- (0.15,0.25);
+    \node[above, font=\scriptsize] at (0,0.2) {3};
+    \draw (-0.6,-2.6) node[left]{\texttt{clock}} -- (2.75,-2.6) -- (2.75,1.4);
+    \foreach \y in {-0.3, -2.0} { \node[circ] at (2.75,\y) {}; }
+    \node[draw, minimum width=0.9cm, minimum height=4.6cm, align=center] (bus) at (7.55,0) {\rotatebox{90}{\texttt{Bus} (L10)}};
+    \draw[->, line width=1.6pt] (bus.east) -- ++(1.2,0) node[right]{\texttt{output}};
+    \node[font=\scriptsize, align=center] at (4.7,2.75) {L9: um \texttt{DFlipFlop} por \textit{bit},\\todos com o mesmo \textit{clock}};
+\end{tikzpicture}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026).
+\end{center}
+\end{figure}
+
+O construtor do \texttt{DFlipFlopRegister} tem exatamente a mesma assinatura do \texttt{BehavioralRegister} (\texttt{clock}, \texttt{data\_in}, \texttt{feedback\_target}), o que permite trocar um pelo outro em qualquer circuito de exemplo sem alterar mais nada além do nome da classe instanciada, como no contador da Seção~\ref{sec:composicao}. Isso torna direta a comparação entre a abstração e sua contraparte real, validada na Seção~\ref{sec:contador-portas-real}.
+
+\section{Composição de Circuitos}
+\label{sec:composicao}
+
+Os componentes descritos nas seções anteriores foram combinados para construir e validar os circuitos de exemplo a seguir. Diferentemente dos algoritmos apresentados até aqui, que reproduzem trechos da biblioteca em si, os exemplos a seguir mostram código de uso: código escrito pelo estudante para compor um circuito a partir dos componentes já prontos.
+
+\subsection{Meio-Somador}
+
+Um meio-somador é obtido diretamente pela composição de uma porta \texttt{Xor} (soma) e uma porta \texttt{And} (\textit{carry}) sobre as mesmas duas entradas de um \textit{bit}, como mostra o Exemplo~\ref{ex:meio-somador}.
+
+\begin{exemplo}[H]
+\caption{Meio-somador composto a partir de Xor e And.}
+\label{ex:meio-somador}
+\begin{minted}{python}
+bx, by = BitArray([x]), BitArray([y])
+soma = Xor(bx, by)
+carry = And(bx, by)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+\subsection{Somador Completo}
+
+O mesmo meio-somador, estendido com um terceiro sinal de \textit{carry} de entrada, é o próprio \texttt{FullAdder} apresentado no Algoritmo~\ref{alg:fulladder}: basta instanciá-lo com três sinais de 1 \textit{bit} (\texttt{a}, \texttt{b}, \texttt{carry\_in}) e ler \texttt{.sum} e \texttt{.carry\_out}.
+
+\subsection{Contador Binário Realimentado com \texttt{BehavioralAdder}}
+
+Esta é a versão mais simples do contador, usada quando o foco é demonstrar o registrador e a realimentação. No Exemplo~\ref{ex:contador-behavioral}, um \texttt{BehavioralAdder} soma continuamente uma constante (\texttt{001}) ao valor atual do próprio contador, e um \texttt{BehavioralRegister} captura esse novo valor a cada pulso de \textit{clock}, devolvendo-o ao mesmo sinal que alimenta o somador.
+
+\begin{exemplo}[H]
+\caption{Contador binário de N \textit{bits} com BehavioralAdder.}
+\label{ex:contador-behavioral}
+\begin{minted}{python}
+increment = BitArray([False, False, True])       # constante 001
+counter_value = BitArray([False, False, False])  # valor atual do contador
+
+adder = BehavioralAdder(increment, counter_value)      # soma = counter_value + 001
+clock = BitArray(False)
+counter = BehavioralRegister(clock, adder, feedback_target=counter_value)  # realimenta
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+A Figura~\ref{fig:propagacao} ilustra a cadeia de propagação desse circuito: a cada pulso de \textit{clock}, o \texttt{BehavioralRegister} lê a saída atual do \texttt{BehavioralAdder}, atualiza \texttt{counter\_value}, e essa atualização dispara automaticamente um novo cálculo do \texttt{BehavioralAdder}, deixando o circuito pronto para o próximo pulso.
+
+\subsection{Contador Binário Realimentado com Portas Lógicas}
+
+Substituindo o \texttt{BehavioralAdder} pelo \texttt{RippleCarryAdder}, como no Exemplo~\ref{ex:contador-portas}, o mesmo contador passa a ter a soma montada inteiramente com portas lógicas, e o \textit{overflow} do 8º pulso deixa de depender de \texttt{pad\_binary\_array}, aparecendo diretamente no \texttt{carry\_out} do somador.
+
+\begin{exemplo}[H]
+\caption{Contador binário de N \textit{bits} com somador de portas lógicas.}
+\label{ex:contador-portas}
+\begin{minted}{python}
+increment = BitArray([False, False, True])
+counter_value = BitArray([False, False, False])
+adder = RippleCarryAdder(counter_value, increment)
+
+clock = BitArray(False)
+counter = BehavioralRegister(clock, adder.sum, feedback_target=counter_value)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+\subsection{Contador Binário Realimentado com Registrador Real}
+\label{sec:contador-registrador-real}
+
+Trocando também o \texttt{BehavioralRegister} pelo \texttt{DFlipFlopRegister} (Seção~\ref{sec:dflipflop-register}), como no Exemplo~\ref{ex:contador-real}, o mesmo contador passa a ser montado do início ao fim só com portas lógicas, sem nenhuma abstração de borda de \textit{clock} em Python: tanto a soma quanto o armazenamento do valor entre pulsos são reproduzidos a partir de \textit{latches} e portas. O sinal de \texttt{clock} precisa ser um \texttt{BitArray} de 1 \textit{bit} em lista (\texttt{[False]}, e não \texttt{False}), pois agora ele alimenta diretamente portas lógicas (o \texttt{Not} de cada \texttt{DFlipFlop}), que operam sobre listas de \textit{bits}; o \texttt{BehavioralRegister}, por sua vez, aceita as duas formas.
+
+\begin{exemplo}[H]
+\caption{Contador binário de N \textit{bits} com registrador real (DFlipFlopRegister).}
+\label{ex:contador-real}
+\begin{minted}{python}
+increment = BitArray([False, False, True])
+counter_value = BitArray([False, False, False])
+adder = RippleCarryAdder(counter_value, increment)
+
+clock = BitArray([False])
+counter = DFlipFlopRegister(clock, adder.sum, feedback_target=counter_value)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+Esse contador é validado e comparado ao seu equivalente com \texttt{BehavioralRegister} na Seção~\ref{sec:contador-portas-real}.
+
+\subsection{\textit{Flip-Flop Toggle}}
+
+O mesmo padrão de realimentação, substituindo o somador por uma porta \texttt{Xor} com uma constante \texttt{1}, produz um \textit{flip-flop} do tipo \textit{toggle}, cuja saída se inverte a cada pulso de \textit{clock}, como mostra o Exemplo~\ref{ex:toggle}.
+
+\begin{exemplo}[H]
+\caption{\textit{Flip-flop} \textit{toggle}.}
+\label{ex:toggle}
+\begin{minted}{python}
+one = BitArray([True])
+clock = BitArray(False)
+signal = BitArray([False])
+
+toggle_logic = Xor(signal, one)
+flip_flop = BehavioralRegister(clock, toggle_logic, feedback_target=signal)
+\end{minted}
+\begin{center}
+\footnotesize Fonte: elaborado pelo autor (2026).
+\end{center}
+\end{exemplo}
+
+Esses circuitos, junto com o comportamento dos três contadores em oito ou nove pulsos de \textit{clock} (incluindo o \textit{overflow}), são validados e discutidos no Capítulo~\ref{cap:resultados}.
+
+\section{Tecnologias Utilizadas}
+
+O simulador foi implementado em Python 3, utilizando exclusivamente recursos da biblioteca padrão da linguagem, sem nenhuma dependência externa. Essa escolha reforça o objetivo do trabalho: o estudante pode executar e modificar o simulador com qualquer instalação padrão de Python, sem a necessidade de instalar ou configurar ferramentas adicionais. Cada módulo e cada classe da biblioteca possui uma \textit{docstring} descrevendo seu papel, de modo que a documentação de uso básico esteja disponível diretamente no código (por exemplo, via \texttt{help(BitArray)}), complementando a descrição arquitetural apresentada neste capítulo. Os testes automatizados descritos na Seção~\ref{sec:testes} também usam apenas o módulo \texttt{unittest} da biblioteca padrão.
+
+\section{A \textit{Engine} de Propagação}
+\label{sec:motor-interno}
+
+Reunindo o que as seções anteriores apresentaram separadamente, a \textit{engine} deste simulador não é um módulo à parte: é o próprio contrato descrito na Seção~\ref{sec:visao-arquitetura} (\texttt{output}, \texttt{add\_listener}, \texttt{trigger\_change}), repetido em cada classe. Não existe um laço central de simulação, um agendador, nem uma noção de tempo ou de ``ciclo de \textit{clock} global'': a propagação inteira acontece dentro da pilha de chamadas do próprio Python, disparada pela primeira atribuição feita pelo código cliente (tipicamente, alternar um \texttt{BitArray} de \textit{clock}).
+
+A Figura~\ref{fig:diagrama-sequencia} traduz essa ideia para o caso concreto do \textit{flip-flop} \textit{toggle} (Seção~\ref{sec:composicao}), reproduzindo, como diagrama de sequência UML, o mesmo log real de propagação apresentado na Seção~\ref{sec:log-propagacao}: uma única atribuição externa (\texttt{clock.output = True}) desencadeia uma cadeia de três chamadas de \texttt{trigger\_change} em sequência, cada uma completada antes que a próxima comece, até o circuito se estabilizar.
+
+\begin{figure}[H]
+\centering
+\caption{Diagrama de sequência de um pulso de \textit{clock} no \textit{flip-flop} \textit{toggle}.}
+\label{fig:diagrama-sequencia}
+\resizebox{\textwidth}{!}{%
+\begin{sequencediagram}
+\newinst{cliente}{:cliente}
+\newinst[2]{clock}{clock:BitArray}
+\newinst[2]{ff}{flip\_flop:BehavioralRegister}
+\newinst[2]{signal}{signal:BitArray}
+\newinst[2]{toggle}{toggle\_logic:Xor}
+
+\mess{cliente}{output = True}{clock}
+\mess{clock}{clock subiu}{ff}
+\mess{ff}{captura e realimenta}{signal}
+\mess{signal}{recalcula}{toggle}
+\end{sequencediagram}%
+}
+\begin{center}
+\footnotesize Fonte: elaborada pelo autor (2026), com base no log de execução real da Seção~\ref{sec:log-propagacao}.
+\end{center}
+\end{figure}
+
+Três decisões de projeto, tomadas em conjunto, definem o comportamento observável dessa \textit{engine}:
+
+\begin{itemize}
+    \item \textbf{Notificação em cadeia síncrona}: quando \texttt{output} de um componente muda, ele chama, um a um, os \textit{listeners} registrados (Linha 16 do Algoritmo~\ref{alg:bitarray}, \texttt{for listener in self.\_listeners}), e cada chamada de \textit{listener} pode, por sua vez, disparar uma nova cadeia de notificações antes de retornar. Isso significa que a propagação de uma única mudança de sinal é resolvida inteiramente antes que o código cliente recupere o controle: não há filas de eventos nem execução assíncrona;
+    \item \textbf{Ordem de notificação}: os \textit{listeners} de um mesmo componente são percorridos na ordem em que foram registrados. Para os circuitos combinacionais e para os circuitos sequenciais construídos sobre o \texttt{BehavioralRegister}, a ordem de notificação não altera o resultado final, pois cada componente recalcula seu próprio estado de forma independente a partir das entradas atuais, e não da ordem de chegada das notificações. Ela deixa de ser um detalhe inofensivo, porém, quando dois componentes que deveriam se ``revezar'' (como o \textit{latch} mestre e o \textit{latch} escravo do \texttt{DFlipFlop}, Seção~\ref{sec:latches}) dependem do mesmo sinal de \texttt{clock}: nesse caso, a ordem determina qual dos dois reage primeiro a uma mudança, e é por isso que \texttt{not\_clock} é registrado como \textit{listener} de \texttt{clock} antes das portas do \textit{latch} escravo (que só existem depois que o \textit{latch} mestre, e portanto \texttt{not\_clock}, já foi construído): como a notificação segue a ordem de registro, o mestre sempre fecha antes de o escravo abrir. Essa validação é apresentada na Seção~\ref{sec:contador-portas-real};
+    \item \textbf{Filtragem por igualdade}: cada componente só recalcula seu \texttt{\_output} e notifica seus \textit{listeners} quando o novo valor calculado difere do anterior (Linhas 13 e 14 do Algoritmo~\ref{alg:bitarray}). Sem esse filtro, um laço de realimentação combinacional genuíno (como o do \texttt{SRLatch}, Seção~\ref{sec:latches}) reentraria indefinidamente na mesma cadeia de chamadas.
+\end{itemize}
+
+Essas três regras bastam para explicar tanto os circuitos que funcionam quanto os que podem não estabilizar: um circuito acíclico (qualquer composição de portas sem realimentação) sempre termina de propagar em um número finito de passos, pois cada componente é notificado uma vez por mudança de entrada; um circuito com realimentação que passa por um \texttt{BehavioralRegister} também termina, porque o \texttt{BehavioralRegister} só propaga adiante no instante controlado da borda de \textit{clock}, e não a cada mudança intermediária de \texttt{data\_in}; um circuito com realimentação através de \textit{latches} (o \texttt{SRLatch} ou o \texttt{DFlipFlop} mestre-escravo, Seção~\ref{sec:latches}) também termina, mas depende, além do filtro por igualdade, de que a ordem de notificação respeite a ordem em que os componentes foram construídos (mestre antes de escravo), para que a alternância de transparência entre os dois \textit{latches} funcione como um mecanismo de corte equivalente ao do \texttt{BehavioralRegister}. Se essa ordem não fosse respeitada, o circuito degeneraria em um laço puramente combinacional com uma única inversão, sem ponto fixo algum, independentemente do filtro por igualdade.
